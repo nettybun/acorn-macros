@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "strict": true,
+    "baseUrl": ".",
+    // TODO: Add more as they become ready
+    "paths": {
+      "style.macro": [
+        "./src/macros/style.macro/index.d.ts"
+      ]
+    },
+  },
+  "exclude": [
+    "node_modules"
+  ]
+}
