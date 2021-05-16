@@ -1,7 +1,7 @@
 {
   "name": "acorn-macros",
   "version": "0.0.0",
-  "description": "Evaluates and replaces JS macros with Acorn",
+  "description": "Framework for evaluating and replacing macros in JS",
   "main": "index.ts",
   "type": "module",
   "license": "MIT",
