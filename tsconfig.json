@@ -10,8 +10,8 @@
       "acorn-macros": [
         "./src/acorn-macros/index.d.ts"
       ],
-      "style.macro/*": [
-        "./src/macros/style.macro/*"
+      "style.macro": [
+        "./src/macros/style.macro"
       ]
     },
     "importsNotUsedAsValues": "error",
