@@ -1,0 +1,23 @@
+{
+  "name": "acorn-macros",
+  "version": "0.0.0",
+  "description": "Evaluates and replaces JS macros with Acorn",
+  "main": "index.ts",
+  "type": "module",
+  "license": "MIT",
+  "author": "Gen Hames",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heyheyhello/acorn-macros"
+  },
+  "devDependencies": {
+    "@types/node": "^15.0.1",
+    "@typescript-eslint/eslint-plugin": "^4.22.0",
+    "@typescript-eslint/parser": "^4.22.0",
+    "acorn": "^8.2.1",
+    "acorn-walk": "^8.1.0",
+    "esbuild": "^0.11.15",
+    "eslint": "^7.25.0",
+    "typescript": "^4.2.4"
+  }
+}

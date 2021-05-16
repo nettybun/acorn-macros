@@ -1,4 +1,4 @@
-# Replace JS macros with Acorn
+# Evaluates and replaces JS macros with Acorn
 
 This does a single AST pass using acorn-walk to collect start/end indices for JS
 identifiers of imports that end in "*.macro". These are evaluated in the correct
