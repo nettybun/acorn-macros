@@ -7,10 +7,14 @@
     "baseUrl": ".",
     // TODO: Add more as they become ready
     "paths": {
-      "style.macro": [
-        "./src/macros/style.macro/index.d.ts"
+      "acorn-macros": [
+        "./src/acorn-macros/index.d.ts"
+      ],
+      "style.macro/*": [
+        "./src/macros/style.macro/*"
       ]
     },
+    "importsNotUsedAsValues": "error",
   },
   "exclude": [
     "node_modules"
