@@ -9,7 +9,7 @@ import {
   // Import aliases turn on syntax highlighting
   cssImpl as css,
   injectGlobalImpl as injectGlobal
-} from 'style.macro/impl';
+} from 'style.acorn/src';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rel = (...paths: string[]) => path.resolve(__dirname, ...paths);
@@ -34,39 +34,46 @@ const buildResult = await esbuild.build({
   // Pass to buildResult instead as buildResult.outputFiles
   write: false,
   bundle: true,
-  minify: true,
+  // minify: true,
 });
 
 const [bundle] = buildResult.outputFiles;
 const codeOriginal = (new TextDecoder()).decode(bundle.contents);
 
+const importObjects = {
+  decl: {
+    pageBackground: '"pageBackground"',
+    textBackground: '"textBackground"',
+    textColour: '"textColour"',
+  },
+  colours: {
+    black: '"#000"',
+  },
+  classes: {
+    center: css`text-align: center;`,
+    text: {
+      _0_xs: css`font-size: 0.75rem;`,
+      _1_sm: css`font-size: 0.875rem;`,
+    },
+  },
+  sizes: {
+    _03: '"30px"',
+    _04: '"40px"',
+    _05: '"50px"',
+  },
+};
+
+declare module 'style.acorn' {
+  const decl:    typeof importObjects.decl;
+  const colours: typeof importObjects.colours;
+  const classes: typeof importObjects.classes;
+  const sizes:   typeof importObjects.sizes;
+}
+
 const codeReplaced = replaceMacros(codeOriginal, [
   styleMacro({
     // Here '...' is for returning JS code and '"..."' is for returning strings
-    // TODO: Explore ways to dedupe this with input.ts
-    importObjects: {
-      value: '2021',
-      decl: {
-        pageBackground: '"pageBackground"',
-        textBackground: '"textBackground"',
-        textColour: '"textColour"',
-      },
-      colours: {
-        black: '"#000"',
-      },
-      classes: {
-        center: css`text-align: center;`,
-        text: {
-          _0_xs: css`font-size: 0.75rem;`,
-          _1_sm: css`font-size: 0.875rem;`,
-        },
-      },
-      sizes: {
-        _03: '"30px"',
-        _04: '"40px"',
-        _05: '"50px"',
-      },
-    },
+    importObjects,
     outFile: rel('out/styles.css'),
     verbose: true,
     beautify: true,

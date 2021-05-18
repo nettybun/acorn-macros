@@ -1,32 +1,7 @@
 // The "declare module" block tells TS the values of the imports so autocomplete
 // works as expected.
 
-// TODO: Is there a way to dedup this in esbuild.ts and input.ts?
-declare module 'style.macro' {
-  const value: 2021;
-  const decl: {
-    pageBackground: 'pageBackground',
-    textBackground: 'textBackground',
-    textColour: 'textColour',
-  };
-  const colours: {
-    black: '#000',
-  };
-  const classes: {
-    center: 'text-align: center;',
-    text: {
-      _0_xs: 'font-size: 0.75rem;',
-      _1_sm: 'font-size: 0.875rem;',
-    },
-  };
-  const sizes: {
-    _03: '30px',
-    _04: '40px',
-    _05: '50px',
-  };
-}
-
-import { css, decl, sizes, colours, classes, value } from 'style.macro';
+import { css, decl, sizes, colours, classes } from 'style.acorn';
 
 const exportedVariable = colours.black;
 const styles = css`
@@ -44,7 +19,6 @@ function shadow(css: number) {
 
 console.log(shadow(10));
 console.log(styles);
-console.log(value);
 console.log(decl.pageBackground);
 
 // These need to be assigned to a variable else --minify-sytax literally removes
