@@ -1,0 +1,9 @@
+{
+  "name": "acorn-macros",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./index.js"
+    }
+  }
+}

@@ -2,13 +2,15 @@
   "name": "acorn-macros",
   "version": "0.0.0",
   "description": "Framework for evaluating and replacing macros in JS",
-  "main": "index.ts",
   "type": "module",
   "license": "MIT",
   "author": "Gen Hames",
   "repository": {
     "type": "git",
     "url": "https://github.com/heyheyhello/acorn-macros"
+  },
+  "scripts": {
+    "style.macro": "cd ./test/style.macro/ && esbuild esbuild.ts > _.js && node _.js; rm _.js"
   },
   "devDependencies": {
     "@types/node": "^15.0.1",

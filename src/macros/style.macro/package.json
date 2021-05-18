@@ -1,0 +1,9 @@
+{
+  "name": "style.macro",
+  "type": "module",
+  "exports": {
+    "./impl": {
+      "import": "./impl.js"
+    }
+  }
+}
