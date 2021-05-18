@@ -25,9 +25,9 @@ const buildResult = await esbuild.build({
   entryPoints: [rel('input.ts')],
   format: 'esm',
   plugins: [{
-    name: 'externalize-macros',
+    name: 'skip-acorn-macros',
     setup(build) {
-      build.onResolve({ filter: /.+\.macro$/ }, ({ path }) =>
+      build.onResolve({ filter: /.+\.acorn$/ }, ({ path }) =>
         ({ path, external: true }));
     },
   }],

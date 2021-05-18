@@ -10,8 +10,9 @@
     "url": "https://github.com/heyheyhello/acorn-macros"
   },
   "scripts": {
-    "install": "cd node_modules  && ln -s ../src/acorn-macros && ln -s ../src/macros/style.macro",
-    "style.macro": "cd ./test/style.macro/ && esbuild esbuild.ts > _.js && node _.js; rm _.js"
+    "install": "cd node_modules  && ln -s ../packages/acorn-macros && ln -s ../packages/style.acorn",
+    "build": "find packages/*.acorn/src.ts -exec bash -c 'esbuild ${0} > ${0/.ts/.js} && echo ${0}' {} \\;",
+    "style.acorn": "cd ./test/style.acorn/ && esbuild esbuild.ts > _.js && node _.js; rm _.js"
   },
   "devDependencies": {
     "@types/node": "^15.0.1",

@@ -1,6 +1,3 @@
-// The "declare module" block tells TS the values of the imports so autocomplete
-// works as expected.
-
 import { css, decl, sizes, colours, classes } from 'style.acorn';
 
 const exportedVariable = colours.black;
