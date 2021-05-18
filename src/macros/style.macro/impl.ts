@@ -71,14 +71,12 @@ const styleMacro = (options: Options = {}): Macro => {
         return { start: nodeParent.start, end: nodeParent.end };
       }
       if (importSpecifier in importObjects) {
-        if (nodeParent.type !== 'MemberExpression') {
-          // @ts-ignore
-          // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-          throw new Error(`Import object ${importSpecifier} must accessed as an object: ${node.name}.x.y.z`);
+        if (nodeParent.type === 'MemberExpression') {
+          let top = nodeParent;
+          for (const node of nodeRest) if (node.type === 'MemberExpression') top = node;
+          return { start: top.start, end: top.end };
         }
-        let top = nodeParent;
-        for (const node of nodeRest) if (node.type === 'MemberExpression') top = node;
-        return { start: top.start, end: top.end };
+        return { start: node.start, end: node.end };
       }
       throw new Error(`Unknown import "${importSpecifier}" for styletakeout.macro`);
     },
