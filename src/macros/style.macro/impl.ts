@@ -17,16 +17,16 @@ import type { Macro } from 'acorn-macros';
 // Side effect: Start a stylesheet immediately
 let sheet = '';
 
-function interpolateTemplateString(quasis: string[], expressions: string[]) {
+function interpolateTemplateString(quasis: TemplateStringsArray, expressions: unknown[]) {
   let string = '';
   for (let i = 0; i < expressions.length; i++) {
-    string += quasis[i] + expressions[i];
+    string += quasis[i] + String(expressions[i]);
   }
   string += quasis[quasis.length - 1];
   return string.replace(/\n?\s*/g, '');
 }
 
-function cssImpl(statics: string[], ...templateVariables: string[]) {
+function cssImpl(statics: TemplateStringsArray, ...templateVariables: unknown[]) {
   const string = interpolateTemplateString(statics, templateVariables);
   sheet += `css: ${string}\n`;
   console.log('cssImpl', string);
@@ -37,7 +37,7 @@ function cssImpl(statics: string[], ...templateVariables: string[]) {
   return `"css-${location}"`;
 }
 
-function injectGlobalImpl(statics: string[], ...templateVariables: string[]) {
+function injectGlobalImpl(statics: TemplateStringsArray, ...templateVariables: unknown[]) {
   const string = interpolateTemplateString(statics, templateVariables);
   sheet += `injectGlobal: ${string}\n`;
   console.log('injectGlobalImpl', string);
@@ -56,7 +56,7 @@ type Options = {
 const styleMacro = (options: Options = {}): Macro => {
   const importObjects = options.importObjects ?? {};
   return {
-    importSource: 'styletakeout.macro',
+    importSource: 'style.macro',
     importSpecifierImpls: {
       css: cssImpl,
       injectGlobal: injectGlobalImpl,
