@@ -8,17 +8,8 @@
     "baseUrl": ".",
     // TODO: Add more as they become ready
     "paths": {
-      "acorn-macros": [
-        "./src/acorn-macros"
-      ],
-      "acorn-macros/*": [
-        "./src/macros/*"
-      ],
-      "style.macro": [
-        "./src/macros/style.macro/index.d.ts"
-      ],
-      "style.macro/impl": [
-        "./src/macros/style.macro/impl.ts"
+      "*": [
+        "packages/*"
       ],
     },
     "importsNotUsedAsValues": "error",
