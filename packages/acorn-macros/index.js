@@ -32,6 +32,8 @@ const evalMetadataReset = {
   macroSpecifier: '',
 };
 
+const importSourceRegex = /\.acorn$|\/acorn-macro$/;
+
 /** @param {string} code; @param {Macro[]} macros; @param {acorn.Node} [ast] */
 const replaceMacros = (code, macros, ast) => {
   /** @type {{ [importSource: string]: number }} */
@@ -101,7 +103,11 @@ const replaceMacros = (code, macros, ast) => {
       }
       const sourceName = node.source.value;
       console.log(`Found import statement ${node.start}->${node.end} ${sourceName}`);
-      if (!sourceName.endsWith('.macro') || !(sourceName in macroIndices)) return;
+      if (!importSourceRegex.exec(sourceName)) return;
+      if (!(sourceName in macroIndices)) {
+        console.log(`Skipping unknown macro "${sourceName}"`);
+        return;
+      }
       node.specifiers.forEach(n => {
         const specImportMap = macroSpecifierToLocals[sourceName] || (macroSpecifierToLocals[sourceName] = {});
         const specLocals = specImportMap[n.imported.name] || (specImportMap[n.imported.name] = []);

@@ -28,7 +28,7 @@ function interpolateTemplateString(quasis: TemplateStringsArray, expressions: un
 
 function cssImpl(statics: TemplateStringsArray, ...templateVariables: unknown[]) {
   const string = interpolateTemplateString(statics, templateVariables);
-  sheet += `css: ${string}\n`;
+  sheet += `/* TODO: Convert css\`...\` via Stylis: ${string} */\n`;
   console.log('cssImpl', string);
   // TODO: Location might not be provided if called outside of replaceMacros()
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -39,7 +39,7 @@ function cssImpl(statics: TemplateStringsArray, ...templateVariables: unknown[])
 
 function injectGlobalImpl(statics: TemplateStringsArray, ...templateVariables: unknown[]) {
   const string = interpolateTemplateString(statics, templateVariables);
-  sheet += `injectGlobal: ${string}\n`;
+  sheet += `/* TODO: Convert injectGlobal\`...\` via Stylis: ${string} */\n`;
   console.log('injectGlobalImpl', string);
   // Put literally nothing back
   return '';
