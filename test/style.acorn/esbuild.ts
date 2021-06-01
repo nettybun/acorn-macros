@@ -1,7 +1,6 @@
 import esbuild from 'esbuild';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
 import { replaceMacros } from 'acorn-macros';
 import {
@@ -11,8 +10,10 @@ import {
   injectGlobalImpl as injectGlobal
 } from 'style.acorn/src';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const rel = (...paths: string[]) => path.resolve(__dirname, ...paths);
+// const [, argv1] = process.argv;
+// if (!argv1) throw new Error('Specify a project root folder');
+// const root = path.resolve(process.cwd(), argv1);
+const rel = (...paths: string[]) => path.join(process.cwd(), ...paths);
 
 // Toss some global styles in immediately before the JS is even bundled/read.
 injectGlobal`
