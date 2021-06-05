@@ -1,11 +1,12 @@
-/* TODO: Convert injectGlobal`...` via Stylis: body{background-color:fuchsia;} */
-/* TODO: Convert css`...` via Stylis: text-align:center; */
-/* TODO: Convert css`...` via Stylis: font-size:0.75rem; */
-/* TODO: Convert css`...` via Stylis: font-size:0.875rem; */
-/* TODO: Convert css`...` via Stylis: padding:15px;background-color:#000;margin-top:50px;margin-left:40px;margin-right:30px; */
-/* TODO: Convert css`...` via Stylis: vertical-align:middle */
-/* TODO: Convert css`...` via Stylis: vertical-align:middle */
-/* TODO: Convert css`...` via Stylis: vertical-align:middle */
-/* TODO: Convert css`...` via Stylis: vertical-align:middle */
-/* TODO: Convert css`...` via Stylis: vertical-align:middle */
-/* TODO: Convert css`...` via Stylis: vertical-align:middle */
+/* 0 */
+body{background-color:fuchsia;}
+.css-0{text-align:center;}
+.css-0{font-size:0.75rem;}
+.css-0{font-size:0.875rem;}
+.css-127{padding:15px;background-color:#000;margin-top:50px;margin-left:40px;margin-right:30px;}
+.css-421{vertical-align:middle;}
+.css-515{vertical-align:middle;}
+.css-587{vertical-align:middle;}
+.css-663{vertical-align:middle;}
+.css-706{vertical-align:middle;}
+.css-749{vertical-align:middle;}
