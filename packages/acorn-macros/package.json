@@ -1,9 +1,21 @@
 {
   "name": "acorn-macros",
+  "version": "0.0.0",
+  "description": "Framework for evaluating and replacing macros in JS",
+  "license": "MIT",
+  "author": "Gen Hames",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heyheyhello/acorn-macros/packages/acorn-macros"
+  },
   "type": "module",
   "exports": {
     ".": {
       "import": "./index.js"
     }
+  },
+  "dependencies": {
+    "acorn": "^8.3.0",
+    "acorn-walk": "^8.1.0"
   }
 }
