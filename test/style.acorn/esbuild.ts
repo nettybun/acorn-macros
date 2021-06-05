@@ -10,9 +10,6 @@ import {
   injectGlobalImpl as injectGlobal
 } from 'style.acorn/src';
 
-// const [, argv1] = process.argv;
-// if (!argv1) throw new Error('Specify a project root folder');
-// const root = path.resolve(process.cwd(), argv1);
 const rel = (...paths: string[]) => path.join(process.cwd(), ...paths);
 
 // Toss some global styles in immediately before the JS is even bundled/read.
