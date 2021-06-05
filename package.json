@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "find packages/*.acorn/src.ts -exec bash -c 'esbuild ${0} > ${0/.ts/.js} && echo ${0}' {} \\;",
-    "test": "bash -c 'cd ./test/${1:-all} && esbuild esbuild.ts | node --input-type=module'"
+    "test": "bash -c 'set -x; cd ./test/${0:-all} && esbuild esbuild.ts | node --input-type=module'"
   },
   "devDependencies": {
     "@types/node": "^15.0.1",
