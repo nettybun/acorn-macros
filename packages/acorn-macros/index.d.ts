@@ -1,10 +1,13 @@
+import type { Node } from 'acorn';
+
 type Macro = {
   importSource: string;
   importSpecifierImpls: { [name: string]: unknown };
-  importSpecifierRangeFn: (specifier: string, ancestors: acorn.Node[]) => IntervalRange;
+  importSpecifierRangeFn: (specifier: string, ancestors: Node[]) => IntervalRange;
   hookPre?: (originalCode: string) => void;
   hookPost?: (replacedCode: string) => void;
 };
+
 type IntervalRange = { start: number, end: number };
 type OpenMacroRange = IntervalRange & { macroLocal: string };
 type ClosedMacroRange = IntervalRange & { replacement: string };

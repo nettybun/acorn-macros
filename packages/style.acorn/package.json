@@ -15,9 +15,10 @@
     }
   },
   "devDependencies": {
-    "acorn": "^8.3.0"
+    "@types/stylis": "^4.0.0"
   },
   "dependencies": {
-    "acorn-macros": "file:../acorn-macros"
+    "acorn-macros": "file:../acorn-macros",
+    "stylis": "^4.0.2"
   }
 }
