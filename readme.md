@@ -1,6 +1,6 @@
 # Framework for evaluating and replacing macros in JS
 
-_Work in progress / Not ready. World-building and API design are wrapping up._
+_Work in progress ⚠_
 
 Defines a framework for defining macros in JS. These imports are evaluated and
 replaced at build-time and have zero runtime overhead. This replaces
@@ -13,27 +13,28 @@ babel-plugin-macros and babel.
 
 ```js
 import fs from 'fs';
-import { css, colours } from 'style.macro'; // Zero overhead CSS-in-JS
-import ms from 'ms.macro'; // Millisecond converter
-import preval from 'preval.macro'; // Arbitrary async functions runner
+import { css, colours } from 'style.acorn'; // Zero overhead CSS-in-JS
+import ms from 'ms.acorn'; // Millisecond converter
+import preval from 'preval.acorn'; // Arbitrary async functions runner
 
 const content = preval`
   const fs = await import('fs');
   return {
-    val: fs.readFileSync(__dirname + '/content.md', 'utf8'),
+    val: fs.readFileSync('../content.md', 'utf8'),
     lineCount() { return content.val.split("\\n").length; }
   };
 `;
-// Nested macros are run in order - css`` will see ${60000}ms not ${ms('1m')}ms
+// Nested macros are run in order. First ms.acorn replaces `ms(...)` with a
+// number. Next, style.macro reads the CSS and replaces it with a classname.
 const classname = css`
   background-color: ${colours.blue._500};
   color: #FFF;
   animation-name: rotate;
-  animation-duration: 0.7s, ${ms('1m')}ms;
+  animation-duration: 0.7s, ${ms('1 min')}ms;
 `;
 ```
 
-Is turned into:
+Turns into:
 
 ```js
 import fs from 'fs';
@@ -42,14 +43,59 @@ const content = {
   val: "# Table of Contents\n- Introduct...",
   lineCount() { return content.val.split("\\n").length; }
 };
-// Nested macros are run in order - css`` will see ${60000}ms not ${ms('1m')}ms
-const classname = "css-YhXC";
+
+// Hash of the CSS and source location of the css`` macro.
+const classname = "css-YhXC-584";
 ```
 
-## How?
+## Install
+
+Search npm for `*.acorn` to find macros. These monorepo is the source of a few
+of them such as _style.acorn_ and _preval.acorn_. There are JS macros published
+as `*.macro` but those are strictly for [babel-plugin-macros][1] and don't work
+here.
+
+This library is very simple. It processes a single JS code string and emits a
+new JS code string. Because there's no processing of the JS module graph or
+understanding of files on the filesystem, your best bet is to gather your source
+code using a tool like [esbuild][2] and process the resulting bundle.
+
+Here's a minimal build script using esbuild with style.acorn:
+
+```ts
+import esbuild from 'esbuild';
+import fs from 'fs';
+import path from 'path';
+import { replaceMacros } from 'acorn-macros';
+import { styleMacro } from 'style.acorn';
+
+const buildResult = await esbuild.build({
+  entryPoints: ['./index.tsx'],
+  // Don't bundle your macros!
+  external: ['style.acorn'],
+  // Pass to buildResult instead as buildResult.outputFiles
+  write: false,
+  bundle: true,
+});
+const [buffer] = buildResult.outputFiles;
+const codeOriginal = (new TextDecoder()).decode(buffer.contents);
+const codeReplaced = replaceMacros(codeOriginal, [
+  styleMacro({
+    outFile: './dist/out.css'
+  }),
+  // You can include other macros here...
+]);
+fs.writeFileSync('./dist/bundle.js', codeReplaced);
+```
+
+Read the build scripts in this repo under _./test/**/esbuild.ts_ for more usage
+examples such as combining macros, providing macro options, and using esbuild
+plugins to automatically externalize all `*.acorn` imports.
+
+## Design
 
 This does a single AST parse (optional) and walk to collect start/end indices
-for any JS identifiers that are imported by a _"*.macro"_ import. These macros
+for any JS identifiers that are imported by a `*.acorn"` import. These imports
 are given this identifier AST node to determine the code range (start/end)
 they'd like to be `eval()`'d on. Later, they're evaluated in the correct order
 to handle nested macros. Macros can run arbitrary code to perform their work,
@@ -109,45 +155,52 @@ your macro as an importable module - no npm package required!
 
 ## Motivation
 
-I wrote this to use my CSS-in-JS macro [styletakeout.macro][1] with esbuild so I
+I wrote this to use my CSS-in-JS macro [styletakeout.macro][3] with esbuild so I
 can drop babel and babel-plugin-macros from my toolchain altogether. This work
-started as research in another repo called [esbuild-macros][2] which explored
+started as research in another repo called [esbuild-macros][4] which explored
 different generic macro-replacement methods such as esbuild plugins, regex
 matching, and then finally using acorn-walk.
 
 In a pastlife I would have done a git-filter-branch to pull history to this
 repo, but I'm tired; the history is available in the other repo.
 
-## Status
+## Known Macros
 
-These are the macros I've thought of so far. Contributions welcome! I can help
-you wire it up too.
+You'll know what work is best handled during compilation - if a macro comes to
+mind, try wiring it up! The `ms.acorn` macro is a simple example of how to write
+one. I originally saw a usecase to provide the following macros:
 
-**Legend:**
+Implemented (_Work in progress_):
 
-- ℹ Description/Ideas written
-- 🗺 Logic and API design written
-- ⚙ Implementation written
-- 🆔 TypeScript declaration written
-- 🧪 Tests written
-- 📝 Docs written
-- ⬆ Published
-- 📚 Implementations exist elsewhere
-- 💁 Help wanted!
+- __common-tags.acorn__: Uses the [common-tags][5] package to do work on
+  strings. Previously named _deindent.acorn_.
+- __ms.acorn__: Uses the [ms][6] package to convertion various time formats to
+  milliseconds. Inspired by [ms.macro][7].
+- __preval.acorn__: Evaluate arbitrary JS in your Node environment. Inspired by
+  [preval.macro][8].
+- __style.acorn__: Take out CSS from CSS-in-JS. Successor to my previous library
+  [styletakeout.macro][3].
 
-**Macros:**
+Ideas:
 
-- deindent.macro: ℹ 🗺 📚
-- graphql.macro: ℹ 📚 💁
-- intl.macro: ℹ 💁
-- json.macro: ℹ
-- ms.macro: ℹ 🗺 ⚙ 📚
-- preval.macro: ℹ 🗺 📚
-- sql.macro: ℹ 📚 💁
-- style.macro: ℹ 🗺 ⚙ 🆔 🧪 📝 📚
-- yaml.macro: ℹ 📚 💁
+- __graphql.acorn__: Swap GQL for the expression result, as Next.js does.
+- __intl.acorn__: Swap text for its locale-specific translations.
+- __json.acorn__: Swap a JSON expression like [JQ][9] or [JTC][10] for the
+  content. Allows importing only specific subsets of huge JSON files.
+- __sql.acorn__: Like graphql.acorn.
+- __yaml.acorn__: Like json.acorn.
 
-**Future work:**
+Note that all the above ideas involve swapping JS for data/content, which can be
+done today with preval.acorn. It makes sense to break away from preval.acorn
+when your macro becomes stateful - in style.acorn this is true because it needs
+to do a global collection of styles and write them to disk using `hookPost`. I
+don't use GraphQL or SQL right now to know if they'd be worth implementing as
+their own macros unless they had more complex logic such as caching.
+
+If you see value in having a macro implemented open an issue and I'll help you
+wire it up.
+
+## Future work:
 
 - [ ] Performance metrics to see which macros do what amount of work
 - [ ] Patch source maps to reflect the macro-replaced code
@@ -155,3 +208,14 @@ you wire it up too.
 - [ ] Improve errors using source maps to show original line/column
 - [ ] Simplify template strings i.e: `` `a ${50} b` `` to `"a 50 b"`.
 - [ ] Simplify normal strings i.e: `"a" + "b"` to `"ab"`.
+
+[1 ]: https://npmjs.com/package/babel-plugin-macros
+[2 ]: https://esbuild.github.io/
+[3 ]: https://npmjs.com/package/styletakeout.macro
+[4 ]: https://github.com/heyheyhello/esbuild-macros
+[5 ]: https://npmjs.com/package/common-tags
+[6 ]: https://npmjs.com/package/ms
+[7 ]: https://npmjs.com/package/ms.macro
+[8 ]: https://npmjs.com/package/preval.macro
+[9 ]: https://stedolan.github.io/jq/
+[10]: https://github.com/ldn-softdev/jtc
