@@ -1,9 +1,23 @@
 {
   "name": "style.acorn",
+  "version": "0.0.0",
+  "description": "Macro to take CSS out of CSS-in-JS",
+  "license": "MIT",
+  "author": "Gen Hames",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heyheyhello/acorn-macros/packages/style.acorn"
+  },
   "type": "module",
   "exports": {
     "./src": {
       "import": "./src.js"
     }
+  },
+  "devDependencies": {
+    "acorn": "^8.3.0"
+  },
+  "dependencies": {
+    "acorn-macros": "file:../acorn-macros"
   }
 }
