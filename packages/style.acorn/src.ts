@@ -1,21 +1,29 @@
-// This is the AST processing code used in replaceMacro(). It's looking for tag
-// template expressions and objects member expressions. If you're a macro author
-// you might want to support other types too, such as unary expressions,
-// function calls, etc.
-
-// TODO: Implement everything styletakeout.macro does. Including caching via
-// hashing and naming with location information, etc.
-
-import * as fs from 'fs';
-import * as path from 'path';
+import fs from 'fs';
 import { evalMeta } from 'acorn-macros';
+import { compile, serialize, stringify } from 'stylis';
+// TODO: Consider using @emotion/hash to hash the CSS snippets
 
-// @ts-ignore TS can't resolve Macro#importSpecifierRangeFn#ancestors...
-import type { Node } from 'acorn';
 import type { Macro } from 'acorn-macros';
 
-// Side effect: Start a stylesheet immediately
+// Side effect of importing is to start a stylesheet immediately
 let sheet = '';
+let snippetCount = 0;
+let timeStart = 0;
+let timeEnd = 0;
+
+type ImportObject = { [importSpecfier: string]: string | ImportObject };
+type Options = {
+  importObjects?: ImportObject,
+  outFile?: string,
+  classPrefix?: string,
+};
+
+// Default config and then becomes resolved config at runtime
+const opts: Required<Options> = {
+  importObjects: {},
+  outFile: './style.css',
+  classPrefix: 'css-',
+};
 
 function interpolateTemplateString(quasis: TemplateStringsArray, expressions: unknown[]) {
   let string = '';
@@ -27,34 +35,29 @@ function interpolateTemplateString(quasis: TemplateStringsArray, expressions: un
 }
 
 function cssImpl(statics: TemplateStringsArray, ...templateVariables: unknown[]) {
-  const string = interpolateTemplateString(statics, templateVariables);
-  sheet += `/* TODO: Convert css\`...\` via Stylis: ${string} */\n`;
-  console.log('cssImpl', string);
-  // TODO: Location might not be provided if called outside of replaceMacros()
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const location = `[${evalMeta.snipRawStart ?? '?'},${evalMeta.snipRawEnd ?? '?'})`;
+  // TODO: Hash?
+  const tag = `${opts.classPrefix}${evalMeta.snipRawStart}`;
+  const style = interpolateTemplateString(statics, templateVariables);
+  const styleCompiled = serialize(compile(`.${tag}{${style}}`), stringify);
+  sheet += styleCompiled + '\n';
+  snippetCount++;
   // Put back a string. Also! Consider str.replaceAll('"', '\\"') as needed
-  return `"css-${location}"`;
+  return `"${tag}"`;
 }
 
 function injectGlobalImpl(statics: TemplateStringsArray, ...templateVariables: unknown[]) {
-  const string = interpolateTemplateString(statics, templateVariables);
-  sheet += `/* TODO: Convert injectGlobal\`...\` via Stylis: ${string} */\n`;
-  console.log('injectGlobalImpl', string);
+  const style = interpolateTemplateString(statics, templateVariables);
+  const styleCompiled = serialize(compile(style), stringify);
+  sheet += `/* ${evalMeta.snipRawStart} */\n` + styleCompiled + '\n';
+  snippetCount++;
   // Put literally nothing back
   return '';
 }
 
-type ImportObject = { [importSpecfier: string]: string | ImportObject };
-type Options = {
-  importObjects?: ImportObject,
-  outFile?: string,
-  verbose?: boolean,
-  beautify?: boolean,
-};
-
 const styleMacro = (options: Options = {}): Macro => {
-  const importObjects = options.importObjects ?? {};
+  // Overlay given options onto the default options
+  Object.assign(opts, options);
+  const { importObjects } = opts;
   return {
     importSource: 'style.acorn',
     importSpecifierImpls: {
@@ -82,11 +85,18 @@ const styleMacro = (options: Options = {}): Macro => {
       }
       throw new Error(`Unknown import "${importSpecifier}" for style.acorn`);
     },
+    hookPre() {
+      timeStart = performance.now();
+    },
     hookPost() {
-      const outFile = options.outFile ?? './out.css';
-      const outPath = path.resolve(outFile);
-      console.log(`CSS written to ${outPath}`);
-      fs.writeFileSync(outPath, sheet);
+      timeEnd = performance.now();
+      const ms = Math.round(timeEnd - timeStart);
+      const outFile = options.outFile ?? './styles.css';
+      // Lowkey pluralize by adding "s"
+      const s = (n: number) => n === 1 ? '' : 's';
+      console.log(`Moved ${snippetCount} CSS snippet${s(snippetCount)} to '${
+        outFile}' with style.acorn in ${ms}ms`);
+      fs.writeFileSync(outFile, sheet);
     },
   };
 };
