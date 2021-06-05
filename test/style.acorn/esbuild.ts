@@ -73,10 +73,9 @@ const codeReplaced = replaceMacros(codeOriginal, [
     // Here '...' is for returning JS code and '"..."' is for returning strings
     importObjects,
     outFile: rel('out/styles.css'),
-    verbose: true,
-    beautify: true,
   }),
 ]);
+// Consider using cssbeautify (npm package) to prettify the CSS?
 fs.writeFileSync(rel('out/code-original.js'), codeOriginal);
 fs.writeFileSync(rel('out/code-replaced-macros.js'), codeReplaced);
 console.log('Done ✨');
