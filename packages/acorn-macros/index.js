@@ -31,6 +31,7 @@ const evalMetadataReset = {
   macroSource: '',
   macroSpecifier: '',
 };
+Object.assign(evalMeta, evalMetadataReset);
 
 const importSourceRegex = /\.acorn$|\/acorn-macro$/;
 
