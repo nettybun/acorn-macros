@@ -1,0 +1,23 @@
+{
+  "name": "ms.acorn",
+  "version": "0.0.0",
+  "description": "Macro to convert various time formats into milliseconds",
+  "license": "MIT",
+  "author": "Gen Hames",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heyheyhello/acorn-macros/packages/ms.acorn"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./index.js"
+    },
+    "./src": {
+      "import": "./src.js"
+    }
+  },
+  "devDependencies": {
+    "acorn-macros": "file:../acorn-macros"
+  }
+}

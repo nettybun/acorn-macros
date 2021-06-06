@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "acorn-macros": "file:packages/acorn-macros",
+    "ms.acorn": "file:packages/ms.acorn",
     "style.acorn": "file:packages/style.acorn"
   }
 }
