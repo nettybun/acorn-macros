@@ -79,7 +79,7 @@ const styleMacro = (options: Options = {}): Macro => {
       const [node, nodeParent, ...nodeRest] = [...identifierAncestors].reverse();
       if ('css' === importSpecifier || 'injectGlobal' === importSpecifier) {
         if (nodeParent.type !== 'TaggedTemplateExpression') {
-          throw new Error('Macros css and injectGlobal must be called as tag template functions');
+          throw new Error('Macros css and injectGlobal must be called as tagged template expressions');
         }
         return { start: nodeParent.start, end: nodeParent.end };
       }
