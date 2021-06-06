@@ -10,7 +10,7 @@
     "url": "https://github.com/heyheyhello/acorn-macros"
   },
   "scripts": {
-    "build": "find packages/*.acorn/src.ts -exec bash -c 'esbuild ${0} > ${0/.ts/.js} && echo ${0}' {} \\;",
+    "build": "node build.js",
     "test": "bash -c 'set -x; cd ./test/${0:-all} && esbuild esbuild.ts | node --input-type=module'"
   },
   "devDependencies": {

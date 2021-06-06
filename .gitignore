@@ -1,2 +1,2 @@
 node_modules
-packages/**/src.js
+packages/**/*.js
