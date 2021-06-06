@@ -78,10 +78,11 @@ const styleMacro = (options: Options = {}): Macro => {
     importSpecifierRangeFn: (importSpecifier, identifierAncestors) => {
       const [node, nodeParent, ...nodeRest] = [...identifierAncestors].reverse();
       if ('css' === importSpecifier || 'injectGlobal' === importSpecifier) {
-        if (nodeParent.type !== 'TaggedTemplateExpression') {
-          throw new Error('Macros css and injectGlobal must be called as tagged template expressions');
+        const { type, start, end } = nodeParent;
+        if (type !== 'TaggedTemplateExpression') {
+          throw new Error(`Macro ${importSpecifier} must be called as a tagged template expression not ${type}`);
         }
-        return { start: nodeParent.start, end: nodeParent.end };
+        return { start, end };
       }
       if (importSpecifier in importObjects) {
         if (nodeParent.type !== 'MemberExpression') {
