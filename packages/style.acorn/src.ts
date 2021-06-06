@@ -1,15 +1,17 @@
 import fs from 'fs';
-import { evalMeta } from 'acorn-macros';
 import { compile, serialize, stringify } from 'stylis';
-// TODO: Consider using @emotion/hash to hash the CSS snippets
-
 import type { Macro } from 'acorn-macros';
 
-// Side effect of importing is to start a stylesheet immediately
-let sheet = '';
-let snippetCount = 0;
-let timeStart = 0;
-let timeEnd = 0;
+// These are two separate maps so global styles are written before classes. They
+// map the CSS string to a "hash" of "N<counter>L<length>". They're also used to
+// resolve duplicates "naturally" without hashing: I'm hoping the JS engine's
+// hash function for Map/Set is faster than @emotion/hash's murmurhash2
+const cssGlobals = new Map<string, string>();
+const cssClasses = new Map<string, string>();
+
+// Perf boost if I "hash" before running Stylis? Can this be sure to remove
+// duplicates? Even Stylis may not fully dedupe the CSS - rule order could
+// change the hash... Might not be worth the complexity.
 
 type ImportObject = { [importSpecfier: string]: string | ImportObject };
 type Options = {
@@ -21,8 +23,8 @@ type Options = {
 // Default config and then becomes resolved config at runtime
 const opts: Required<Options> = {
   importObjects: {},
-  outFile: './style.css',
-  classPrefix: 'css-',
+  outFile: './styles.css',
+  classPrefix: '',
 };
 
 function interpolateTemplateString(quasis: TemplateStringsArray, expressions: unknown[]) {
@@ -35,21 +37,27 @@ function interpolateTemplateString(quasis: TemplateStringsArray, expressions: un
 }
 
 function cssImpl(statics: TemplateStringsArray, ...templateVariables: unknown[]) {
-  // TODO: Hash?
-  const tag = `${opts.classPrefix}${evalMeta.snipRawStart}`;
-  const style = interpolateTemplateString(statics, templateVariables);
-  const styleCompiled = serialize(compile(`.${tag}{${style}}`), stringify);
-  sheet += styleCompiled + '\n';
-  snippetCount++;
-  // Put back a string. Also! Consider str.replaceAll('"', '\\"') as needed
-  return `"${tag}"`;
+  const str = interpolateTemplateString(statics, templateVariables);
+  const strStylis = serialize(compile(`X{${str}}`), stringify);
+  console.log(strStylis);
+  let id = cssClasses.get(strStylis);
+  if (!id) {
+    id = `N${cssClasses.size}L${strStylis.length - 3}`; // Drop `X{` and `}`
+    cssClasses.set(strStylis, id);
+  }
+  // Put back a string. Hope they didn't use `"` in their classPrefix...
+  return `"${opts.classPrefix}${id}"`;
 }
 
 function injectGlobalImpl(statics: TemplateStringsArray, ...templateVariables: unknown[]) {
-  const style = interpolateTemplateString(statics, templateVariables);
-  const styleCompiled = serialize(compile(style), stringify);
-  sheet += `/* ${evalMeta.snipRawStart} */\n` + styleCompiled + '\n';
-  snippetCount++;
+  const str = interpolateTemplateString(statics, templateVariables);
+  const strStylis = serialize(compile(str), stringify);
+  console.log(strStylis);
+  let id = cssGlobals.get(strStylis);
+  if (!id) {
+    id = `N${cssGlobals.size}L${strStylis.length}`;
+    cssGlobals.set(strStylis, id);
+  }
   // Put literally nothing back
   return '';
 }
@@ -58,6 +66,8 @@ const styleMacro = (options: Options = {}): Macro => {
   // Overlay given options onto the default options
   Object.assign(opts, options);
   const { importObjects } = opts;
+  let timeStart = 0;
+  let timeEnd = 0;
   return {
     importSource: 'style.acorn',
     importSpecifierImpls: {
@@ -90,13 +100,20 @@ const styleMacro = (options: Options = {}): Macro => {
     },
     hookPost() {
       timeEnd = performance.now();
+
+      let styles = '';
+      for (const [style, tag] of cssGlobals.entries()) {
+        styles += '/* ' + tag + ' */\n' + style + '\n';
+      }
+      for (const [style, tag] of cssClasses.entries()) {
+        styles += '.' + opts.classPrefix + tag + style.slice(1) + '\n';
+      }
+      const total = cssGlobals.size + cssClasses.size;
       const ms = Math.round(timeEnd - timeStart);
-      const outFile = options.outFile ?? './styles.css';
       // Lowkey pluralize by adding "s"
       const s = (n: number) => n === 1 ? '' : 's';
-      console.log(`Moved ${snippetCount} CSS snippet${s(snippetCount)} to '${
-        outFile}' with style.acorn in ${ms}ms`);
-      fs.writeFileSync(outFile, sheet);
+      console.log(`Moved ${total} CSS snippet${s(total)} to '${opts.outFile}' with style.acorn in ${ms}ms`);
+      fs.writeFileSync(opts.outFile, styles);
     },
   };
 };
