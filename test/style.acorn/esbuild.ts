@@ -1,7 +1,5 @@
 import esbuild from 'esbuild';
 import fs from 'fs';
-import path from 'path';
-
 import { replaceMacros } from 'acorn-macros';
 import {
   styleMacro,
@@ -9,8 +7,6 @@ import {
   cssImpl as css,
   injectGlobalImpl as injectGlobal
 } from 'style.acorn/src';
-
-const rel = (...paths: string[]) => path.join(process.cwd(), ...paths);
 
 // Toss some global styles in immediately before the JS is even bundled/read.
 injectGlobal`
@@ -20,21 +16,12 @@ injectGlobal`
 `;
 
 const buildResult = await esbuild.build({
-  entryPoints: [rel('input.ts')],
+  entryPoints: ['./input.ts'],
   format: 'esm',
-  plugins: [{
-    name: 'skip-acorn-macros',
-    setup(build) {
-      build.onResolve({ filter: /.+\.acorn$/ }, ({ path }) =>
-        ({ path, external: true }));
-    },
-  }],
-  // Pass to buildResult instead as buildResult.outputFiles
+  external: ['style.acorn'],
   write: false,
   bundle: true,
-  // minify: true,
 });
-
 const [bundle] = buildResult.outputFiles;
 const codeOriginal = (new TextDecoder()).decode(bundle.contents);
 
@@ -72,10 +59,10 @@ const codeReplaced = replaceMacros(codeOriginal, [
   styleMacro({
     // Here '...' is for returning JS code and '"..."' is for returning strings
     importObjects,
-    outFile: rel('out/styles.css'),
+    outFile: './out/styles.css',
   }),
 ]);
 // Consider using cssbeautify (npm package) to prettify the CSS?
-fs.writeFileSync(rel('out/code-original.js'), codeOriginal);
-fs.writeFileSync(rel('out/code-replaced-macros.js'), codeReplaced);
+fs.writeFileSync('./out/code-original.js', codeOriginal);
+fs.writeFileSync('./out/code-replaced-macros.js', codeReplaced);
 console.log('Done ✨');
