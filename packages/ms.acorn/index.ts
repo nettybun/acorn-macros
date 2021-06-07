@@ -3,3 +3,4 @@ throw new Error('Importing ms.acorn at runtime isn\'t supported. '
 
 /** Converts a time string (s/m/h/d/w/y) to a number of milliseconds */
 export declare function ms(time: string): number;
+export declare function ms(statics: TemplateStringsArray, ...variables: string[]): number;
