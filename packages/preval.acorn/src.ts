@@ -1,14 +1,23 @@
 import type { Macro } from 'acorn-macros';
+import { createContext, runInContext } from 'vm';
 
 const prevalMacro = (): Macro => {
+
   return {
     importSource: 'preval.acorn',
     importSpecifierImpls: {
       // XXX: NO BUENO.
-      async preval(code: string): Promise<unknown> {
-        const asyncFn = eval(`async () => {${code}}`) as () => Promise<unknown>;
-        const result = await asyncFn();
-        return JSON.stringify(result);
+      preval(code: string): unknown {
+        const context = createContext({ result: '', console });
+        const script = `(async () => {${code}})().then(res => { console.log('VM', res); result = res });`;
+        runInContext(script, context, {
+          microtaskMode: 'afterEvaluate',
+          // @ts-ignore Experimental
+          importModuleDynamically(specifer, script) {
+            console.log('VM IMD', specifer, script);
+          },
+        });
+        return context.result;
       },
     },
     importSpecifierRangeFn: (specifier, ancestors) => {
