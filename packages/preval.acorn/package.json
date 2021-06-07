@@ -1,0 +1,23 @@
+{
+  "name": "preval.acorn",
+  "version": "0.0.0",
+  "description": "Run Node.js code at compile time",
+  "license": "MIT",
+  "author": "Gen Hames",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heyheyhello/acorn-macros/packages/preval.acorn"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./index.js"
+    },
+    "./src": {
+      "import": "./src.js"
+    }
+  },
+  "devDependencies": {
+    "acorn-macros": "file:../acorn-macros"
+  }
+}

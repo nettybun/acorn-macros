@@ -15,13 +15,14 @@ babel-plugin-macros and babel.
 import fs from 'fs';
 import { css, colours } from 'style.acorn'; // Zero overhead CSS-in-JS
 import ms from 'ms.acorn'; // Millisecond converter
-import preval from 'preval.acorn'; // Arbitrary async functions runner
+import preval from 'preval.acorn'; // Runs an async function at compile-time
 
 const content = preval`
   const fs = await import('fs');
+  const content = fs.readFileSync('../content.md', 'utf8');
   return {
-    val: fs.readFileSync('../content.md', 'utf8'),
-    lineCount() { return content.val.split("\\n").length; }
+    val: content,
+    lineCount() { return content.split("\\n").length; }
   };
 `;
 // Nested macros are run in order. First ms.acorn replaces `ms(...)` with a

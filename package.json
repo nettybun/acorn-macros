@@ -24,6 +24,7 @@
   "dependencies": {
     "acorn-macros": "file:packages/acorn-macros",
     "ms.acorn": "file:packages/ms.acorn",
+    "preval.acorn": "file:packages/preval.acorn",
     "style.acorn": "file:packages/style.acorn"
   }
 }
