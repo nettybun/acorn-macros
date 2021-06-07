@@ -50,13 +50,13 @@ const classname = "css-YhXC-584";
 
 ## Install
 
-Search npm for `*.acorn` to find macros. These monorepo is the source of a few
-of them such as _style.acorn_ and _preval.acorn_. There are JS macros published
-as `*.macro` but those are strictly for [babel-plugin-macros][1] and don't work
-here.
+Search npm for `*.acorn` to find macros. This monorepo is the source of a few of
+them such as _style.acorn_, _ms.acorn_, and _preval.acorn_. You'll see JS macros
+published as `*.macro` but those are strictly for [babel-plugin-macros][1] and
+don't work here.
 
-This library is very simple. It processes a single JS code string and emits a
-new JS code string. Because there's no processing of the JS module graph or
+This library is very simple. It processes a single JS code-string and emits a
+new JS code-string. Because there's no processing of the JS module graph or
 understanding of files on the filesystem, your best bet is to gather your source
 code using a tool like [esbuild][2] and process the resulting bundle.
 
