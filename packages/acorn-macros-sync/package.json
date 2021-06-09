@@ -1,12 +1,12 @@
 {
-  "name": "acorn-macros",
+  "name": "acorn-macros-sync",
   "version": "0.0.0",
   "description": "Framework for evaluating and replacing macros in JS",
   "license": "MIT",
   "author": "Gen Hames",
   "repository": {
     "type": "git",
-    "url": "https://github.com/heyheyhello/acorn-macros/packages/acorn-macros"
+    "url": "https://github.com/heyheyhello/acorn-macros/packages/acorn-macros-sync"
   },
   "type": "module",
   "exports": {

@@ -143,11 +143,12 @@ const replaceMacros = (code, macros, ast) => {
 
   /** @param {number} sourcecodeIndex */
   function closeOpenIdsUpTo(sourcecodeIndex) {
-    // Walk through the stack backwards
+    // I'd prefer `while (x = stack.pop())` but I need to conditionally pop...
     for (let i = openMacroRangeStack.length - 1; i >= 0; i--) {
-      const open = openMacroRangeStack[i];
+      const open = openMacroRangeStack[i]; // First peek
       if (open.end > sourcecodeIndex) return;
-      openMacroRangeStack.pop();
+      openMacroRangeStack.pop(); // Then pop the peek
+      // TODO: Promise list? Promise.all()...NO. NO. It's a STACK in ORDER.
       closeOpenId(open);
     }
   }
@@ -178,6 +179,9 @@ const replaceMacros = (code, macros, ast) => {
     let macro = macroToSpecifierImpls;
     evalSnip = `const ${macroLocal} = macro["${source}"]["${specifier}"]; ${evalSnip}`;
     try {
+      // TODO: Use AsyncFunction instead of eval. Less work for the JS engine.
+      // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval#never_use_eval!
+
       // Running in a new closure so `macroLocal` doesn't conflict with us
       { evalResult = eval(evalSnip); }
     } catch (err) {
@@ -209,6 +213,9 @@ const replaceMacros = (code, macros, ast) => {
 
 /** @param {{ start: number, end: number }} x */
 const p = (x) => `[${x.start},${x.end})`;
+
+// Items on the closed list are stored in an "Interval Range List" which is an
+// ordered list of non-overlapping intervals like `[3,5),[5,7),[10,11),[25,27)`
 
 /** @param {IntervalRange[]} list; @param {IntervalRange} range  */
 function intervalRangeListInsert(list, range) {
@@ -247,9 +254,9 @@ function intervalRangeListSplice(list, start, end) {
       removeIndices.push(i);
       continue;
     }
-    // Entirely before
+    // Entirely before. We're passed the range. Exit.
     if (cursor.end <= start) break;
-    // Entirely after. We're passed the range. Exit.
+    // Entirely after
     if (cursor.start >= end) continue;
     throw new Error(`Splice partially cuts ${p(cursor)}`);
   }
