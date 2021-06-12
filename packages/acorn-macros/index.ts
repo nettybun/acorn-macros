@@ -4,9 +4,20 @@ import * as walk from 'acorn-walk';
 import type { Node } from 'acorn';
 
 type Interval = { start: number, end: number };
-// TODO: Not sure the right type yet. Depends on the data structure.
-type Task = Interval & { content: Promise<string> }; // ???
 
+type Zippable = Promise<string> & {
+  indexStart: number,
+  indexEnd: number,
+}
+
+// Has it's own private runner function to resolve the zippable value.
+type Task = Zippable & {
+  macro: { source: string, identifier: string, specifier: string },
+  innerTasks: Array<Task>,
+  flagAsParsed(): void,
+};
+
+// A plugin
 type Macro = {
   importSource: string;
   importSpecifierImpls: { [name: string]: unknown };
@@ -28,9 +39,6 @@ const AsyncFunction = (Object.getPrototypeOf(async function() {}) as {
 
 const importSourceRegex = /\.acorn$|\/acorn-macro$/;
 
-/** Pretty-print interval range */
-const p = (x: Interval) => `[${x.start},${x.end})`;
-
 async function replaceMacros(code: string, macros: Macro[], ast?: Node): Promise<string> {
   // Start by parsing the `macros` array into their components
   const macroToIndex: { [importSource: string]: number } = {};
@@ -51,19 +59,79 @@ async function replaceMacros(code: string, macros: Macro[], ast?: Node): Promise
   });
 
   // Two-way map of minified local variables to their original import specifier
-  const macroSpecifierToLocals: {
+  const macroSpecifierToIdendifiers: {
     // "style.acorn": { "injectGlobal": ["xyz", "a1", "a2", ...] }
     [macro: string]: { [specifier: string]: string[] | undefined } | undefined;
   } = {};
-  const macroLocalToSpecifiers: {
+  const macroIdentifierToSpecifiers: {
     // "xyz": { source: "style.acorn", specifier: "injectGlobal" }
-    [local: string]: { source: string, specifier: string } | undefined;
+    [identifier: string]: { source: string, specifier: string } | undefined;
   } = {};
 
-  // TODO: Implement the main topo-task-tree data structure
-  // Is there only ever one tree root? I think so, since we close/remove a tree
-  // when it's done, just before adding the next one. Yeah...
-  const intervalTree: Task[] = [];
+  // XXX: Each item is a non-overlappting root from [start,end). Not all zips
+  // support nesting, so this is considered "flat" even though tasks will have
+  // dependencies as `task.innerTasks`.
+  const zipList: Zippable[] = [];
+
+  // TODO: Unused?
+  /** Pretty-print interval range */
+  const p = (x: Interval) => `[${x.start},${x.end})`;
+
+  /** Create and start a task. It'll resolve to the macro replacement */
+  function spawnTask(
+    meta: { source: string, identifier: string, specifier: string },
+    interval: { start: number, end: number }
+  ): Task {
+    let taskResolve: (result: string) => void;
+    let parsedResolve: () => void;
+    // @ts-ignore
+    const task: Task = new Promise<string>((req) => { taskResolve = req; });
+    task.macro = meta;
+    task.innerTasks = [];
+    task.indexStart = interval.start;
+    task.indexEnd = interval.end;
+    const isParsed = new Promise<void>((req) => { parsedResolve = req; });
+    task.flagAsParsed = () => parsedResolve();
+
+    const taskRunner = async () => {
+      await isParsed;
+      const runnerCode = await zipString(code, interval, task.innerTasks);
+      const runner = new AsyncFunction(meta.identifier, `return await ${runnerCode}`);
+      const macroImpl = macroToSpecifierImpls[meta.source][meta.specifier];
+      let runnerResult;
+      try { runnerResult = await runner(macroImpl); }
+      catch (err) {
+        console.error(`Macro eval for:\n${runnerCode}`);
+        throw err as Error;
+      }
+      console.log('Macro eval result:', runnerResult);
+      if (typeof runnerResult !== 'string') {
+        throw new Error(`Macro eval returned ${typeof runnerResult} instead of a string`);
+      }
+      taskResolve(runnerResult);
+    };
+    // Floating promise. Keep parsing other identifiers and handle it later.
+    void taskRunner();
+    return task;
+  }
+
+  async function zipString(code: string, interval: Interval, zips: Zippable[]) {
+    const zipResults = await Promise.all(zips);
+    const { start, end } = interval;
+    let runnerCode = end - start < code.length
+      ? code.slice(start, end)
+      : code;
+    // Work backwards to not mess up indices
+    for (let i = 0; i < zipResults.length; i++) {
+      const str = zipResults[i];
+      const { indexStart, indexEnd } = zips[i];
+      runnerCode
+          = runnerCode.slice(0, indexStart - start)
+          + str
+          + runnerCode.slice(indexEnd - start);
+    }
+    return runnerCode;
+  }
 
   // This doesn't have to be a start AST node like node.type === "Program". It
   // can be anything. That's useful to someone somewhere.
@@ -96,90 +164,50 @@ async function replaceMacros(code: string, macros: Macro[], ast?: Node): Promise
         return;
       }
       node.specifiers.forEach(n => {
-        const specImportMap = macroSpecifierToLocals[sourceName] || (macroSpecifierToLocals[sourceName] = {});
+        const specImportMap = macroSpecifierToIdendifiers[sourceName] || (macroSpecifierToIdendifiers[sourceName] = {});
         const specLocals = specImportMap[n.imported.name] || (specImportMap[n.imported.name] = []);
         if (specLocals.includes(n.local.name)) return;
         specLocals.push(n.local.name);
-        macroLocalToSpecifiers[n.local.name] = {
+        macroIdentifierToSpecifiers[n.local.name] = {
           source: sourceName,
           specifier: n.imported.name,
         };
       });
-      const { start, end } = node;
-      intervalTree.push({ start, end, content: Promise.resolve('') });
+      // @ts-ignore
+      const importTask: Zippable = Promise.resolve('');
+      importTask.indexStart = node.start;
+      importTask.indexEnd = node.end;
+      insertToZipList(importTask);
     },
     // @ts-ignore
     Identifier(node: IdentifierNode, state, ancestors) {
       seenIndentifier = true;
       console.log('Identifier', node.name);
-      const meta = macroLocalToSpecifiers[node.name];
+      const meta = macroIdentifierToSpecifiers[node.name];
       if (!meta) return;
-      // Basically "closeRangesUpTo" but instead of evaluating the macro I just
-      // resolve the `cursorPromise` for each item up to the current cursor.
+      // TODO: flagAsParsed() up to node.loc
       console.log('Identifier matches', meta.source, meta.specifier);
       ancestors.forEach((n, i) => {
         console.log(`  - ${'  '.repeat(i)}${n.type} ${p(n)}`);
       });
       const resolver = macroToSpecifierRangeFns[meta.source];
-      const { start, end } = resolver(meta.specifier, ancestors);
-      // Macros auto-evaluate when Promise.all([cursorPromise, ...depPromises])
-      // resolves. When a macro has evaluated, its fulfillment is part of the
-      // lower macro's depPromise. The cursorPromise prevents it from evaluating
-      // too early, before other dependent macros are found.
-      const content = runMacro({ start, end }, node.name);
-      intervalTree.push({ start, end, content });
+      const interval = resolver(meta.specifier, ancestors);
+      const macroTask = spawnTask({ ...meta, identifier: node.name }, interval);
+      insertToZipList(macroTask);
     },
   });
+  // TODO: flagAsParsed() up to ast.end
 
-  // TODO: Pass object reference to the interval tree location? Curious if
-  // writing to arr in Promise.all(arr) successfully adds promises or not...
-  async function runMacro({ start, end }: Interval, macroLocal: string): Promise<string> {
-    const cursorPromise = new Promise((req) => {
-      intervalTree.push({ start, end, req });
-    });
-    // TODO: I need the root to also be some kind of huge promise + eval...so
-    // maybe change the "Task" type to be a Promise? Ugh...
-    const depPromises: Task[] = [];
-    await Promise.all([cursorPromise, ...depPromises.map(x => x.content)]);
-    // Separate if object ref? await P.all(depPromises); await cursorPromise;
-
-    // TODO: Wording
-    console.log(`Closing open macro range: ${p({ start, end })}`);
-    let runSnip = code.slice(start, end);
-    // Do eval.
-    // Work backwards to not mess up indices
-    for (const range of depPromises) {
-      runSnip
-        = runSnip.slice(0, range.start - start)
-        + range.content // TODO: Not await...
-        + runSnip.slice(range.end - start);
-    }
-    const run = new AsyncFunction(macroLocal, `return await ${runSnip}`);
-    const { source, specifier } = macroLocalToSpecifiers[macroLocal]!;
-    const macroImpl = macroToSpecifierImpls[source][specifier];
-    let runResult;
-    try {
-      runResult = await run(macroImpl);
-    }
-    catch (err) {
-      console.error(`Macro eval for:\n${runSnip}`);
-      throw err as Error;
-    }
-    console.log('Macro eval result:', runResult);
-    if (typeof runResult !== 'string') {
-      throw new Error(`Macro eval returned ${typeof runResult} instead of a string`);
-    }
-    return runResult;
-  }
-
-  // TODO: Await interval tree? This is the whole root "Task" problem
-  await Promise.all(intervalTree);
-  code = '...';
+  // Final zip
+  code = await zipString(code, { start: 0, end: code.length }, zipList);
 
   // Call macro.hookPost with macro-replaced code
   hooksPost.forEach(hook => hook(code));
   return code;
 }
+
+// TODO: Port the IntervalList from acorn-macros-sync
+function insertToZipList(zip: Zippable) {}
 
 export { replaceMacros };
 export type { Macro };
