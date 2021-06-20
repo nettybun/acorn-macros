@@ -1,6 +1,11 @@
 import fs from 'fs';
 import { compile, serialize, stringify } from 'stylis';
-import type { Macro } from 'acorn-macros';
+import { Function } from 'acorn-macros';
+
+import type { MacroDefinition } from 'acorn-macros';
+
+type MacroImportSpecifer = MacroDefinition['importSpecifiers'][''];
+type RangeFn = MacroImportSpecifer['rangeFn'];
 
 // These are two separate maps so global styles are written before classes. They
 // map the CSS string to a "hash" of "N<counter>L<length>". They're also used to
@@ -62,39 +67,39 @@ function injectGlobalImpl(statics: TemplateStringsArray, ...templateVariables: u
   return '';
 }
 
-const styleMacro = (options: Options = {}): Macro => {
+const rangeFnForTagTemplates: RangeFn = (macroIden, ASTAncestors) => {
+  const nodeParent = ASTAncestors[ASTAncestors.length - 2]; // Identifier is - 1
+  const { type, start, end } = nodeParent;
+  const { specifier } = macroIden;
+  if (type !== 'TaggedTemplateExpression') {
+    throw new Error(`Macro ${specifier} must be called as a tagged template expression not ${type}`);
+  }
+  return { start, end };
+};
+
+const styleMacro = (options: Options = {}): MacroDefinition => {
   // Overlay given options onto the default options
   Object.assign(opts, options);
   const { importObjects } = opts;
   let timeStart = 0;
   let timeEnd = 0;
-  return {
+  const macroDef: MacroDefinition = {
     importSource: 'style.acorn',
-    importSpecifierImpls: {
-      css: cssImpl,
-      injectGlobal: injectGlobalImpl,
-      ...importObjects,
-    },
-    importSpecifierRangeFn: (importSpecifier, identifierAncestors) => {
-      const [node, nodeParent, ...nodeRest] = [...identifierAncestors].reverse();
-      if ('css' === importSpecifier || 'injectGlobal' === importSpecifier) {
-        const { type, start, end } = nodeParent;
-        if (type !== 'TaggedTemplateExpression') {
-          throw new Error(`Macro ${importSpecifier} must be called as a tagged template expression not ${type}`);
-        }
-        return { start, end };
-      }
-      if (importSpecifier in importObjects) {
-        if (nodeParent.type !== 'MemberExpression') {
-          // @ts-ignore
-          // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-          throw new Error(`Import object ${importSpecifier} must be accessed as an object: ${node.name}.x.y.z`);
-        }
-        let top = nodeParent;
-        for (const node of nodeRest) if (node.type === 'MemberExpression') top = node;
-        return { start: top.start, end: top.end };
-      }
-      throw new Error(`Unknown import "${importSpecifier}" for style.acorn`);
+    importSpecifiers: {
+      css: {
+        rangeFn: rangeFnForTagTemplates,
+        replaceFn(macroIden, macroExpr) {
+          const run = new Function(macroIden.identifier, `return ${macroExpr}`);
+          return run(cssImpl);
+        },
+      },
+      injectGlobal: {
+        rangeFn: rangeFnForTagTemplates,
+        replaceFn(macroIden, macroExpr) {
+          const run = new Function(macroIden.identifier, `return ${macroExpr}`);
+          return run(injectGlobalImpl);
+        },
+      },
     },
     hookPre() {
       timeStart = performance.now();
@@ -117,6 +122,29 @@ const styleMacro = (options: Options = {}): Macro => {
       fs.writeFileSync(opts.outFile, styles);
     },
   };
+  for (const name of Object.keys(importObjects)) {
+    macroDef.importSpecifiers[name] = {
+      rangeFn(macroIden, ASTAncestors) {
+        const { specifier } = macroIden;
+        const [node, nodeParent, ...nodeRest] = [...ASTAncestors].reverse();
+        if (nodeParent.type !== 'MemberExpression') {
+          // @ts-ignore
+          // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+          throw new Error(`Import ${specifier} must be accessed as an object: ${node.name}.x.y.z`);
+        }
+        let top = nodeParent;
+        for (const node of nodeRest) if (node.type === 'MemberExpression') top = node;
+        return { start: top.start, end: top.end };
+      },
+      replaceFn(macroIden, macroExpr) {
+        // If importObjects supported only one level deep (aka no objects) I
+        // could get away with `return importObjects[macroExpr]`...
+        const run = new Function(macroIden.identifier, `return ${macroExpr}`);
+        return run(importObjects[name]);
+      },
+    };
+  }
+  return macroDef;
 };
 
 // Implementations are exported in case you want to use them directly in the
