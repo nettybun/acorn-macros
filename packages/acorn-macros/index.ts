@@ -43,7 +43,9 @@ type MacroDefinition = {
        * all been replaced, so the expression length may not match the indices
        * from `rangeFn`. Function must return a valid JS expression - note that
        * returning a string would mean using `return '"..."';` */
-      replaceFn: (macroIden: MacroIden, macroExpr: string) => Promise<string> | string,
+      replaceFn:
+        | ((macroIden: MacroIden, macroExpr: string) => Promise<string>)
+        | ((macroIden: MacroIden, macroExpr: string) => string),
     },
   },
   hookPre?: (originalCode: string) => void,
