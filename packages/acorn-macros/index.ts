@@ -147,23 +147,24 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
       if (seenIndentifier) {
         throw new Error('Import statement found after an identifier');
       }
-      const sourceName = node.source.value;
-      console.log(`Found import statement ${node.start}->${node.end} ${sourceName}`);
-      if (!importSourceRegex.exec(sourceName)) return;
-      if (!(sourceName in macroToIndex)) {
-        console.log(`Skipping unknown macro "${sourceName}"`);
+      const source = node.source.value;
+      console.log(`Found import statement ${node.start}->${node.end} ${source}`);
+      if (!importSourceRegex.exec(source)) return;
+      if (!(source in macroToIndex)) {
+        console.log(`Skipping unknown macro "${source}"`);
         return;
       }
       node.specifiers.forEach(n => {
-        const specImportMap = objGet(mapSourceSpeciferToLocal, sourceName);
-        const specLocals = objGet(specImportMap, n.imported.name);
-        if (specLocals.includes(n.local.name)) return;
-        specLocals.push(n.local.name);
-        mapLocalToMacroIden[n.local.name] = {
-          identifier: n.local.name,
-          source: sourceName,
-          specifier: n.imported.name,
-        };
+        const specifier = n.imported.name;
+        const identifier = n.local.name;
+        if (!(specifier in macroToSpecifierFns[source])) {
+          throw new Error(`Import specifier ${specifier} is not part of ${source}`);
+        }
+        const specImportMap = objGet(mapSourceSpeciferToLocal, source);
+        const specLocals = objGet(specImportMap, specifier);
+        if (specLocals.includes(identifier)) return;
+        specLocals.push(identifier);
+        mapLocalToMacroIden[identifier] = { identifier, source, specifier };
       });
       const patch: Patch = {
         replacement: Promise.resolve(''),
