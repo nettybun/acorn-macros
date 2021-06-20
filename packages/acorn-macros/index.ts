@@ -3,47 +3,82 @@ import * as walk from 'acorn-walk';
 
 import type { Node } from 'acorn';
 
-type Interval = { start: number, end: number };
+/** Identifies a macro from its unique JS identifier */
+type MacroIden = { identifier: string, source: string, specifier: string };
+/** Range from [start,end) */
+type ExprRange = { start: number, end: number };
 
-type Zippable = Promise<string> & {
-  indexStart: number,
-  indexEnd: number,
-}
+type Patch = {
+  replacement: Promise<string>,
+  task?: PatchTask,
+} & ExprRange;
 
-// Has it's own private runner function to resolve the zippable value.
-type Task = Zippable & {
-  macro: { source: string, identifier: string, specifier: string },
-  innerTasks: Array<Task>,
-  flagAsParsed(): void,
+/**
+ * Ordered non-overlapping list of patches. The last list item only supports
+ * nesting if it references an unstarted task via `patch.task` */
+type PatchList = Patch[];
+
+/**
+ * Helps resolve a patch. Not all patches need one. Tasks are async functions on
+ * the microtask queue and only start once the AST walk is done */
+type PatchTask = {
+  macroIden: MacroIden,
+  patch: Patch;
+  patchListNested: PatchList,
+  // Called after acorn-walk has read passed `patch.end`. Throws if called after
+  // the promise has already resolved.
+  run: () => Promise<void>,
 };
 
-// A plugin
-type Macro = {
-  importSource: string;
-  importSpecifierImpls: { [name: string]: unknown };
-  importSpecifierRangeFn: (specifier: string, ancestors: Node[]) => Interval;
-  hookPre?: (originalCode: string) => void;
-  hookPost?: (replacedCode: string) => void;
+type MacroDefinition = {
+  importSource: string,
+  importSpecifiers: {
+    [name: string]: {
+      /**
+       * Determines the start/end indices of the macro expression to replace.
+       * Nested macros will be replaced before calling `replaceFn` */
+      rangeFn: (macroIden: MacroIden, ASTAncestors: Node[]) => ExprRange,
+      /**
+       * Determines the replacement for the macro expression. Nested macros have
+       * all been replaced, so the expression length may not match the indices
+       * from `rangeFn`. Function must return a valid JS expression - note that
+       * returning a string would mean using `return '"..."';` */
+      replaceFn: (macroIden: MacroIden, macroExpr: string) => Promise<string> | string,
+    },
+  },
+  hookPre?: (originalCode: string) => void,
+  hookPost?: (replacedCode: string) => void,
 };
 
 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/AsyncFunction
-// Specific to use in this file
-interface AsyncFunction extends Function {
-  (macroImpl: unknown): Promise<string>;
-}
+// Isn't a global like Function. Also, Function is "any" type. These are used
+// for code generation so I'll define them as returning a string of code.
 interface AsyncFunctionConstructor {
-  new(macroLocal: string, code: string): AsyncFunction;
+  new (...args: [...parameters: string[], expr: string]):
+    (...parameters: unknown[]) => Promise<string>
 }
 const AsyncFunction = (Object.getPrototypeOf(async function() {}) as {
   constructor: AsyncFunctionConstructor }).constructor;
 
+interface FunctionConstructor {
+  new (...args: [...parameters: string[], expr: string]):
+    (...parameters: unknown[]) => string
+}
+const Function = (Object.getPrototypeOf(function() {}) as {
+  constructor: FunctionConstructor }).constructor;
+
 const importSourceRegex = /\.acorn$|\/acorn-macro$/;
 
-async function replaceMacros(code: string, macros: Macro[], ast?: Node): Promise<string> {
+/** Pretty-print interval range */
+const p = (x: ExprRange) => `[${x.start},${x.end})`;
+// @ts-ignore. Creates a new nested dictionary entry `{}` as needed.
+// eslint-disable-next-line @typescript-eslint/no-unsafe-return
+const objGet = <T>(o: T, k: string): Exclude<T[keyof T], undefined> => o[k] || (o[k] = {});
+
+async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node): Promise<string> {
   // Start by parsing the `macros` array into their components
   const macroToIndex: { [importSource: string]: number } = {};
-  const macroToSpecifierRangeFns: { [importSource: string]: Macro['importSpecifierRangeFn'] } = {};
-  const macroToSpecifierImpls: { [macro: string]: Macro['importSpecifierImpls'] } = {};
+  const macroToSpecifierFns: { [importSource: string]: MacroDefinition['importSpecifiers'] } = {};
   const hooksPre: ((originalCode: string) => void)[] = [];
   const hooksPost: ((replacedCode: string) => void)[] = [];
   macros.forEach((macro, i) => {
@@ -52,85 +87,39 @@ async function replaceMacros(code: string, macros: Macro[], ast?: Node): Promise
       throw new Error(`Duplicate macro "${name}" at indices ${macroToIndex[name]} and ${i}`);
     }
     macroToIndex[name] = i;
-    macroToSpecifierRangeFns[name] = macro.importSpecifierRangeFn;
-    macroToSpecifierImpls[name] = macro.importSpecifierImpls;
+    macroToSpecifierFns[name] = macro.importSpecifiers;
     if (macro.hookPre) hooksPre.push(macro.hookPre);
     if (macro.hookPost) hooksPost.push(macro.hookPost);
   });
 
   // Two-way map of minified local variables to their original import specifier
-  const macroSpecifierToIdendifiers: {
+  const mapSourceSpeciferToLocal: {
     // "style.acorn": { "injectGlobal": ["xyz", "a1", "a2", ...] }
     [macro: string]: { [specifier: string]: string[] | undefined } | undefined;
   } = {};
-  const macroIdentifierToSpecifiers: {
-    // "xyz": { source: "style.acorn", specifier: "injectGlobal" }
-    [identifier: string]: { source: string, specifier: string } | undefined;
+  const mapLocalToMacroIden: {
+    // "xyz": { identifier: "xyz", source: "style.acorn", specifier: "injectGlobal" }
+    [identifier: string]: MacroIden | undefined;
   } = {};
 
-  // XXX: Each item is a non-overlappting root from [start,end). Not all zips
-  // support nesting, so this is considered "flat" even though tasks will have
-  // dependencies as `task.innerTasks`.
-  const zipList: Zippable[] = [];
+  const patchList: PatchList = [];
+  const unstartedTasks = new Set<PatchTask>();
 
-  // TODO: Unused?
-  /** Pretty-print interval range */
-  const p = (x: Interval) => `[${x.start},${x.end})`;
-
-  /** Create and start a task. It'll resolve to the macro replacement */
-  function spawnTask(
-    meta: { source: string, identifier: string, specifier: string },
-    interval: { start: number, end: number }
-  ): Task {
-    let taskResolve: (result: string) => void;
-    let parsedResolve: () => void;
-    // @ts-ignore
-    const task: Task = new Promise<string>((req) => { taskResolve = req; });
-    task.macro = meta;
-    task.innerTasks = [];
-    task.indexStart = interval.start;
-    task.indexEnd = interval.end;
-    const isParsed = new Promise<void>((req) => { parsedResolve = req; });
-    task.flagAsParsed = () => parsedResolve();
-
-    const taskRunner = async () => {
-      await isParsed;
-      const runnerCode = await zipString(code, interval, task.innerTasks);
-      const runner = new AsyncFunction(meta.identifier, `return await ${runnerCode}`);
-      const macroImpl = macroToSpecifierImpls[meta.source][meta.specifier];
-      let runnerResult;
-      try { runnerResult = await runner(macroImpl); }
-      catch (err) {
-        console.error(`Macro eval for:\n${runnerCode}`);
-        throw err as Error;
-      }
-      console.log('Macro eval result:', runnerResult);
-      if (typeof runnerResult !== 'string') {
-        throw new Error(`Macro eval returned ${typeof runnerResult} instead of a string`);
-      }
-      taskResolve(runnerResult);
-    };
-    // Floating promise. Keep parsing other identifiers and handle it later.
-    void taskRunner();
-    return task;
-  }
-
-  async function zipString(code: string, interval: Interval, zips: Zippable[]) {
-    const zipResults = await Promise.all(zips);
-    const { start, end } = interval;
-    let runnerCode = end - start < code.length
-      ? code.slice(start, end)
+  async function applyPatches(codeRange: ExprRange, patches: Patch[]) {
+    const patchStrings = await Promise.all(patches.map(p => p.replacement));
+    let expr = (codeRange.start > 0 || codeRange.end < code.length)
+      ? code.slice(codeRange.start, codeRange.end)
       : code;
     // Work backwards to not mess up indices
-    for (let i = 0; i < zipResults.length; i++) {
-      const str = zipResults[i];
-      const { indexStart, indexEnd } = zips[i];
-      runnerCode
-          = runnerCode.slice(0, indexStart - start)
-          + str
-          + runnerCode.slice(indexEnd - start);
+    for (let i = 0; i < patchStrings.length; i++) {
+      const replacement = patchStrings[i];
+      const { start, end } = patches[i];
+      expr
+          = expr.slice(0, start - codeRange.start)
+          + replacement
+          + expr.slice(end - codeRange.start);
     }
-    return runnerCode;
+    return expr;
   }
 
   // This doesn't have to be a start AST node like node.type === "Program". It
@@ -164,50 +153,88 @@ async function replaceMacros(code: string, macros: Macro[], ast?: Node): Promise
         return;
       }
       node.specifiers.forEach(n => {
-        const specImportMap = macroSpecifierToIdendifiers[sourceName] || (macroSpecifierToIdendifiers[sourceName] = {});
-        const specLocals = specImportMap[n.imported.name] || (specImportMap[n.imported.name] = []);
+        const specImportMap = objGet(mapSourceSpeciferToLocal, sourceName);
+        const specLocals = objGet(specImportMap, n.imported.name);
         if (specLocals.includes(n.local.name)) return;
         specLocals.push(n.local.name);
-        macroIdentifierToSpecifiers[n.local.name] = {
+        mapLocalToMacroIden[n.local.name] = {
+          identifier: n.local.name,
           source: sourceName,
           specifier: n.imported.name,
         };
       });
-      // @ts-ignore
-      const importTask: Zippable = Promise.resolve('');
-      importTask.indexStart = node.start;
-      importTask.indexEnd = node.end;
-      insertToZipList(importTask);
+      const patch: Patch = {
+        replacement: Promise.resolve(''),
+        start: node.start,
+        end: node.end,
+      };
+      insertToPatchList(patchList, patch);
     },
     // @ts-ignore
     Identifier(node: IdentifierNode, state, ancestors) {
       seenIndentifier = true;
-      console.log('Identifier', node.name);
-      const meta = macroIdentifierToSpecifiers[node.name];
-      if (!meta) return;
-      // TODO: flagAsParsed() up to node.loc
-      console.log('Identifier matches', meta.source, meta.specifier);
+      const macroIden = mapLocalToMacroIden[node.name];
+      if (!macroIden) return;
+      console.log('Identifier matches', macroIden);
       ancestors.forEach((n, i) => {
         console.log(`  - ${'  '.repeat(i)}${n.type} ${p(n)}`);
       });
-      const resolver = macroToSpecifierRangeFns[meta.source];
-      const interval = resolver(meta.specifier, ancestors);
-      const macroTask = spawnTask({ ...meta, identifier: node.name }, interval);
-      insertToZipList(macroTask);
+      const {
+        rangeFn,
+        replaceFn,
+      } = macroToSpecifierFns[macroIden.source][macroIden.specifier];
+      const range = rangeFn(macroIden, ancestors);
+      // Task handle which resolves the patch promise when called
+      let taskResolver: (result: string) => void;
+      const patch: Patch = {
+        replacement: new Promise<string>((req) => { taskResolver = req; }),
+        start: range.start,
+        end: range.end,
+      };
+      insertToPatchList(patchList, patch);
+      const patchTask: PatchTask = {
+        macroIden,
+        patch,
+        patchListNested: [],
+        run,
+      };
+      let ran = false;
+      async function run() {
+        if (ran) throw new Error('Task run() already called');
+        ran = true;
+        unstartedTasks.delete(patchTask);
+        // Prevent others from adding to patchListNested by removing the task
+        delete patch.task;
+        const macroExpr = await applyPatches(range, patchTask.patchListNested);
+        let macroExprResult;
+        try { macroExprResult = await replaceFn(macroIden!, macroExpr); }
+        catch (err) {
+          console.error(`Macro eval for:\n${macroExpr}`);
+          throw err as Error;
+        }
+        if (typeof macroExprResult !== 'string') {
+          throw new Error(`Macro eval returned ${typeof macroExprResult} instead of a string`);
+        }
+        taskResolver(macroExprResult);
+      }
+      unstartedTasks.add(patchTask);
     },
   });
-  // TODO: flagAsParsed() up to ast.end
+  // Clear any remaining tasks
+  // TODO: Shouldn't be a Set()? Just use an array/queue...
+  // TODO: How to prevent tasks from running more than once?
+  unstartedTasks.forEach(task => { void task.run(); });
 
-  // Final zip
-  code = await zipString(code, { start: 0, end: code.length }, zipList);
+  // Apply final replacements. Note AST is a Node which fits the ExprRange type
+  code = await applyPatches(ast, patchList);
 
-  // Call macro.hookPost with macro-replaced code
   hooksPost.forEach(hook => hook(code));
   return code;
 }
 
-// TODO: Port the IntervalList from acorn-macros-sync
-function insertToZipList(zip: Zippable) {}
+function insertToPatchList(patchList: PatchList, patch: Patch) {
+  // TODO: Call run() on all items before last item
+}
 
-export { replaceMacros };
-export type { Macro };
+export { replaceMacros, Function, AsyncFunction };
+export type { MacroDefinition };
