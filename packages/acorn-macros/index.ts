@@ -114,12 +114,10 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
       : code;
     // Work backwards to not mess up indices
     for (let i = 0; i < patchStrings.length; i++) {
-      const replacement = patchStrings[i];
-      const { start, end } = patches[i];
       expr
-          = expr.slice(0, start - codeRange.start)
-          + replacement
-          + expr.slice(end - codeRange.start);
+        = expr.slice(0, patches[i].start - codeRange.start)
+        + patchStrings[i]
+        + expr.slice(patches[i].end - codeRange.start);
     }
     return expr;
   }
