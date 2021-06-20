@@ -1,4 +1,5 @@
-import type { Macro } from 'acorn-macros';
+import { Function } from 'acorn-macros';
+import type { MacroDefinition } from 'acorn-macros';
 
 const s = 1000;
 const m = s * 60;
@@ -22,22 +23,23 @@ function ms(time: string) {
   return String(Number(amount) * conv[letter]);
 }
 
-const msMacro = (): Macro => {
-  return {
-    importSource: 'ms.acorn',
-    importSpecifierImpls: { ms },
-    importSpecifierRangeFn: (specifier, ancestors) => {
-      if (specifier !== 'ms') {
-        throw new Error(`Unknown import "${specifier}" for ms.acorn`);
-      }
-      const nodeParent = ancestors[ancestors.length - 2];
-      const { type, start, end } = nodeParent; // Worst case this is "Program"
-      if (type !== 'TaggedTemplateExpression' && type !== 'CallExpression') {
-        throw new Error(`Macro ms must be called as either a function or a tagged template expression not ${type}`);
-      }
-      return { start, end };
+const msMacro = (): MacroDefinition => ({
+  importSource: 'ms.acorn',
+  importSpecifiers: {
+    ms: {
+      rangeFn(_, ancestors) {
+        const nodeParent = ancestors[ancestors.length - 2];
+        const { type, start, end } = nodeParent; // Worst case this is "Program"
+        if (type !== 'TaggedTemplateExpression' && type !== 'CallExpression') {
+          throw new Error(`Macro ms must be called as either a function or a tagged template expression not ${type}`);
+        }
+        return { start, end };
+      },
+      replaceFn({ identifier }, macroExpr) {
+        return (new Function(identifier, `return ${macroExpr}`))(ms);
+      },
     },
-  };
-};
+  },
+});
 
 export { msMacro };

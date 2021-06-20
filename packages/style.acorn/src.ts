@@ -67,10 +67,9 @@ function injectGlobalImpl(statics: TemplateStringsArray, ...templateVariables: u
   return '';
 }
 
-const rangeFnForTagTemplates: RangeFn = (macroIden, ASTAncestors) => {
-  const nodeParent = ASTAncestors[ASTAncestors.length - 2]; // Identifier is - 1
+const rangeFnForTagTemplates: RangeFn = ({ specifier }, ancestors) => {
+  const nodeParent = ancestors[ancestors.length - 2]; // Identifier is - 1
   const { type, start, end } = nodeParent;
-  const { specifier } = macroIden;
   if (type !== 'TaggedTemplateExpression') {
     throw new Error(`Macro ${specifier} must be called as a tagged template expression not ${type}`);
   }
@@ -124,8 +123,7 @@ const styleMacro = (options: Options = {}): MacroDefinition => {
   };
   for (const name of Object.keys(importObjects)) {
     macroDef.importSpecifiers[name] = {
-      rangeFn(macroIden, ASTAncestors) {
-        const { specifier } = macroIden;
+      rangeFn({ specifier }, ASTAncestors) {
         const [node, nodeParent, ...nodeRest] = [...ASTAncestors].reverse();
         if (nodeParent.type !== 'MemberExpression') {
           // @ts-ignore
@@ -136,10 +134,10 @@ const styleMacro = (options: Options = {}): MacroDefinition => {
         for (const node of nodeRest) if (node.type === 'MemberExpression') top = node;
         return { start: top.start, end: top.end };
       },
-      replaceFn(macroIden, macroExpr) {
+      replaceFn({ identifier }, macroExpr) {
         // If importObjects supported only one level deep (aka no objects) I
         // could get away with `return importObjects[macroExpr]`...
-        const run = new Function(macroIden.identifier, `return ${macroExpr}`);
+        const run = new Function(identifier, `return ${macroExpr}`);
         return run(importObjects[name]);
       },
     };
