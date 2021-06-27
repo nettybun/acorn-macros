@@ -3,31 +3,42 @@ import * as walk from 'acorn-walk';
 
 import type { Node } from 'acorn';
 
-/** Identifies a macro from its unique JS identifier */
-type MacroIden = { identifier: string, source: string, specifier: string };
-/** Range from [start,end) */
+/** Range from `start` up to but not including `end`. Short form: [start,end) */
 type ExprRange = { start: number, end: number };
 
 type Patch = {
-  replacement: Promise<string>,
-  task?: PatchTask,
-} & ExprRange;
+  range: ExprRange,
+  value: Promise<string>,
+};
 
-/**
- * Ordered non-overlapping list of patches. The last list item only supports
- * nesting if it references an unstarted task via `patch.task` */
-type PatchList = Patch[];
+type ImportPatch = {
+  range: ExprRange,
+  value: Promise<string>,
+  importMeta: ImportMeta,
+};
 
-/**
- * Helps resolve a patch. Not all patches need one. Tasks are async functions on
- * the microtask queue and only start once the AST walk is done */
-type PatchTask = {
-  macroIden: MacroIden,
-  patch: Patch;
-  patchListNested: PatchList,
-  // Called after acorn-walk has read passed `patch.end`. Throws if called after
-  // the promise has already resolved.
-  run: () => Promise<void>,
+type IdenPatch = {
+  range: ExprRange,
+  value: Promise<string>,
+  valueResolver(value: string): void;
+  idenMeta: IdenMeta,
+  nestedPatches: IdenPatch[],
+};
+
+/** Metadata about a macro's specifiers */
+type ImportMeta = {
+  source: string,
+  specifiers: string[],
+};
+
+/** Metadata about a macro's identifier */
+type IdenMeta = {
+  importSource: string,
+  importSpecifier: string,
+  importSpecifierIden: string,
+  ancestors: Node[],
+  /** Data shared between rangeFn and replaceFn (same object reference) */
+  state: { [k: string]: unknown },
 };
 
 type MacroDefinition = {
@@ -37,15 +48,15 @@ type MacroDefinition = {
       /**
        * Determines the start/end indices of the macro expression to replace.
        * Nested macros will be replaced before calling `replaceFn` */
-      rangeFn: (macroIden: MacroIden, ASTAncestors: Node[]) => ExprRange,
+      rangeFn: (idenMeta: IdenMeta) => ExprRange,
       /**
        * Determines the replacement for the macro expression. Nested macros have
        * all been replaced, so the expression length may not match the indices
        * from `rangeFn`. Function must return a valid JS expression - note that
        * returning a string would mean using `return '"..."';` */
       replaceFn:
-        | ((macroIden: MacroIden, macroExpr: string) => Promise<string>)
-        | ((macroIden: MacroIden, macroExpr: string) => string),
+        | ((idenMeta: IdenMeta, macroExpr: string) => Promise<string>)
+        | ((idenMeta: IdenMeta, macroExpr: string) => string),
     },
   },
   hookPre?: (originalCode: string) => void,
@@ -74,52 +85,77 @@ const importSourceRegex = /\.acorn$|\/acorn-macro$/;
 /** Pretty-print interval range */
 const p = (x: ExprRange) => `[${x.start},${x.end})`;
 // @ts-ignore. Creates a new nested dictionary entry `{}` as needed.
-// eslint-disable-next-line @typescript-eslint/no-unsafe-return
-const objGet = <T>(o: T, k: string): Exclude<T[keyof T], undefined> => o[k] || (o[k] = {});
+const objGet = <T>(o: Partial<T>, k: string) => (o[k] || (o[k] = {})) as T[keyof T];
 
 async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node): Promise<string> {
   // Start by parsing the `macros` array into their components
-  const macroToIndex: { [importSource: string]: number } = {};
-  const macroToSpecifierFns: { [importSource: string]: MacroDefinition['importSpecifiers'] } = {};
+  const mapSourceToIndex: { [source: string]: number } = {};
+  const mapSourceToSpecToFns: { [source: string]: MacroDefinition['importSpecifiers'] } = {};
   const hooksPre: ((originalCode: string) => void)[] = [];
   const hooksPost: ((replacedCode: string) => void)[] = [];
   macros.forEach((macro, i) => {
-    const name = macro.importSource;
-    if (macroToIndex[name]) {
-      throw new Error(`Duplicate macro "${name}" at indices ${macroToIndex[name]} and ${i}`);
+    const source = macro.importSource;
+    if (mapSourceToIndex[source]) {
+      throw new Error(`Duplicate macro "${source}" at index ${mapSourceToIndex[source]} and ${i}`);
     }
-    macroToIndex[name] = i;
-    macroToSpecifierFns[name] = macro.importSpecifiers;
+    mapSourceToIndex[source] = i;
+    mapSourceToSpecToFns[source] = macro.importSpecifiers;
     if (macro.hookPre) hooksPre.push(macro.hookPre);
     if (macro.hookPost) hooksPost.push(macro.hookPost);
   });
 
-  // Two-way map of minified local variables to their original import specifier
-  const mapSourceSpeciferToLocal: {
-    // "style.acorn": { "injectGlobal": ["xyz", "a1", "a2", ...] }
-    [macro: string]: { [specifier: string]: string[] | undefined } | undefined;
-  } = {};
-  const mapLocalToMacroIden: {
-    // "xyz": { identifier: "xyz", source: "style.acorn", specifier: "injectGlobal" }
-    [identifier: string]: MacroIden | undefined;
-  } = {};
+  // Two-way map of minified local identifiers to their import specifier
+  // This is a one-to-many relationship
 
-  const patchList: PatchList = [];
-  const unstartedTasks = new Set<PatchTask>();
+  // "style.acorn": { "injectGlobal": ["xyz", "a1", "a2", ...] }
+  const mapSourceSpecToIdens: Partial<{
+    [source: string]: Partial<{
+      [specifier: string]: string[]
+    }>;
+  }> = {};
+
+  // "xyz": { source: "style.acorn", specifier: "injectGlobal" }
+  const mapIdenToSourceSpec: Partial<{
+    [identifier: string]: { source: string, specifier: string };
+  }> = {};
+
+  const openStack: IdenPatch[] = [];
+  const closedPatches: Patch[] = [];
+
+  // TODO: Maybe remove these? They could be used only once each...
+  function pushToOpenStack(patch: IdenPatch) {}
+  function pushToClosedList(patch: Patch) {}
 
   async function applyPatches(codeRange: ExprRange, patches: Patch[]) {
-    const patchStrings = await Promise.all(patches.map(p => p.replacement));
+    const patchStrings = await Promise.all(patches.map(p => p.value));
     let expr = (codeRange.start > 0 || codeRange.end < code.length)
       ? code.slice(codeRange.start, codeRange.end)
       : code;
     // Work backwards to not mess up indices
     for (let i = 0; i < patchStrings.length; i++) {
       expr
-        = expr.slice(0, patches[i].start - codeRange.start)
+        = expr.slice(0, patches[i].range.start - codeRange.start)
         + patchStrings[i]
-        + expr.slice(patches[i].end - codeRange.start);
+        + expr.slice(patches[i].range.end - codeRange.start);
     }
     return expr;
+  }
+
+  async function closePatch(patch: IdenPatch) {
+    const { range, nestedPatches, idenMeta } = patch;
+    const { importSource, importSpecifier } = idenMeta;
+    const { replaceFn } = mapSourceToSpecToFns[importSource][importSpecifier];
+    const macroExpr = await applyPatches(range, nestedPatches);
+    let macroExprResult;
+    try { macroExprResult = await replaceFn({ ...idenMeta }, macroExpr); }
+    catch (err) {
+      console.error(`Macro eval for:\n${macroExpr}`);
+      throw err as Error;
+    }
+    if (typeof macroExprResult !== 'string') {
+      throw new Error(`Macro eval returned ${typeof macroExprResult} instead of a string`);
+    }
+    patch.valueResolver(macroExprResult);
   }
 
   // This doesn't have to be a start AST node like node.type === "Program". It
@@ -146,95 +182,80 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
         throw new Error('Import statement found after an identifier');
       }
       const source = node.source.value;
+      const specifiers: string[] = [];
       console.log(`Found import statement ${node.start}->${node.end} ${source}`);
       if (!importSourceRegex.exec(source)) return;
-      if (!(source in macroToIndex)) {
+      if (!(source in mapSourceToIndex)) {
         console.log(`Skipping unknown macro "${source}"`);
         return;
       }
       node.specifiers.forEach(n => {
         const specifier = n.imported.name;
         const identifier = n.local.name;
-        if (!(specifier in macroToSpecifierFns[source])) {
+        if (!(specifier in mapSourceToSpecToFns[source])) {
           throw new Error(`Import specifier ${specifier} is not part of ${source}`);
         }
-        const specImportMap = objGet(mapSourceSpeciferToLocal, source);
+        specifiers.push(specifier);
+        const specImportMap = objGet(mapSourceSpecToIdens, source);
         const specLocals = objGet(specImportMap, specifier);
         if (specLocals.includes(identifier)) return;
         specLocals.push(identifier);
-        mapLocalToMacroIden[identifier] = { identifier, source, specifier };
+        mapIdenToSourceSpec[identifier] = { source, specifier };
       });
-      const patch: Patch = {
-        replacement: Promise.resolve(''),
-        start: node.start,
-        end: node.end,
+      // TODO: Hate mixing patches...
+      const patch: ImportPatch = {
+        value: Promise.resolve(''),
+        range: {
+          start: node.start,
+          end: node.end,
+        },
+        importMeta: { source, specifiers },
       };
-      insertToPatchList(patchList, patch);
+      closedPatches.push(patch);
     },
     // @ts-ignore
-    Identifier(node: IdentifierNode, state, ancestors) {
+    Identifier(node: IdentifierNode, _, ancestors) {
       seenIndentifier = true;
-      const macroIden = mapLocalToMacroIden[node.name];
-      if (!macroIden) return;
-      console.log('Identifier matches', macroIden);
+      const identifier = node.name;
+      const sourceSpecifier = mapIdenToSourceSpec[identifier];
+      if (!sourceSpecifier) return;
+      const { source, specifier } = sourceSpecifier;
+      console.log('Identifier matches', sourceSpecifier);
       ancestors.forEach((n, i) => {
         console.log(`  - ${'  '.repeat(i)}${n.type} ${p(n)}`);
       });
-      const {
-        rangeFn,
-        replaceFn,
-      } = macroToSpecifierFns[macroIden.source][macroIden.specifier];
-      const range = rangeFn(macroIden, ancestors);
+      // Maintain an object reference so macro authors can pass state around
+      const state = {};
+      const idenMeta: IdenMeta = {
+        importSource: source,
+        importSpecifier: specifier,
+        importSpecifierIden: identifier,
+        ancestors,
+        state,
+      };
+      const { rangeFn } = mapSourceToSpecToFns[source][specifier];
+      const range = rangeFn({ ...idenMeta });
       // Task handle which resolves the patch promise when called
-      let taskResolver: (result: string) => void;
-      const patch: Patch = {
-        replacement: new Promise<string>((req) => { taskResolver = req; }),
-        start: range.start,
-        end: range.end,
+      let resolve: (result: string) => void;
+      const patch: IdenPatch = {
+        range: { start: range.start, end: range.end },
+        value: new Promise<string>((res) => { resolve = res; }),
+        valueResolver(value) { resolve(value); },
+        nestedPatches: [],
+        idenMeta,
       };
-      insertToPatchList(patchList, patch);
-      const patchTask: PatchTask = {
-        macroIden,
-        patch,
-        patchListNested: [],
-        run,
-      };
-      let ran = false;
-      async function run() {
-        if (ran) throw new Error('Task run() already called');
-        ran = true;
-        unstartedTasks.delete(patchTask);
-        // Prevent others from adding to patchListNested by removing the task
-        delete patch.task;
-        const macroExpr = await applyPatches(range, patchTask.patchListNested);
-        let macroExprResult;
-        try { macroExprResult = await replaceFn(macroIden!, macroExpr); }
-        catch (err) {
-          console.error(`Macro eval for:\n${macroExpr}`);
-          throw err as Error;
-        }
-        if (typeof macroExprResult !== 'string') {
-          throw new Error(`Macro eval returned ${typeof macroExprResult} instead of a string`);
-        }
-        taskResolver(macroExprResult);
-      }
-      unstartedTasks.add(patchTask);
+      // Push to open stack. Follow the O.S -> C.L algorithm for closing patches
+      // who end before this patch. Throw as needed for overlapping areas.
+      pushToOpenStack(patch);
     },
   });
-  // Clear any remaining tasks
-  // TODO: Shouldn't be a Set()? Just use an array/queue...
-  // TODO: How to prevent tasks from running more than once?
-  unstartedTasks.forEach(task => { void task.run(); });
+  // TODO: Clear any remaining open stack items
 
   // Apply final replacements. Note AST is a Node which fits the ExprRange type
-  code = await applyPatches(ast, patchList);
+  code = await applyPatches(ast, closedPatches);
 
   hooksPost.forEach(hook => hook(code));
   return code;
-}
-
-function insertToPatchList(patchList: PatchList, patch: Patch) {
-  // TODO: Call run() on all items before last item
 }
 
 export { replaceMacros, Function, AsyncFunction };
