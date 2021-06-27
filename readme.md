@@ -2,6 +2,8 @@
 
 _Work in progress ⚠_
 
+_**These docs are out of date. The API has changed. Sorry!**_
+
 Defines a framework for defining macros in JS. These imports are evaluated and
 replaced at build-time and have zero runtime overhead. This replaces
 babel-plugin-macros and babel.
