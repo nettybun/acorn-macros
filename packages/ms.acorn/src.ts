@@ -11,9 +11,6 @@ const conv = { s, m, h, d, w, y };
 
 function ms(time: string) {
   const match = /^(\d+(?:\.\d+)?)\s*(\w+)?$/.exec(time);
-  // TODO: Handle hydrating macro errors with location (index) information. This
-  // should happen at the replaceMacros() level with sourcemaps, not in
-  // individual macros...
   if (!match) {
     throw new Error(`Format "${time}" isn't a valid time for ms.acorn`);
   }

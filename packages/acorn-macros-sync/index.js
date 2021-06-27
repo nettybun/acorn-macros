@@ -148,7 +148,6 @@ const replaceMacros = (code, macros, ast) => {
       const open = openMacroRangeStack[i]; // First peek
       if (open.end > sourcecodeIndex) return;
       openMacroRangeStack.pop(); // Then pop the peek
-      // TODO: Promise list? Promise.all()...NO. NO. It's a STACK in ORDER.
       closeOpenId(open);
     }
   }

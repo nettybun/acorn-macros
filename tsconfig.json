@@ -6,7 +6,6 @@
     "allowSyntheticDefaultImports": true,
     "strict": true,
     "baseUrl": ".",
-    // TODO: Add more as they become ready
     "paths": {
       "*": [
         "packages/*"

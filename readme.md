@@ -207,7 +207,7 @@ wire it up.
 
 - [ ] Performance metrics to see which macros do what amount of work
 - [ ] Patch source maps to reflect the macro-replaced code
-- [ ] Improve errors by rethrowing macro errors with useful metadata
+- [x] Improve errors by rethrowing macro errors with useful metadata
 - [ ] Improve errors using source maps to show original line/column
 - [ ] Simplify template strings i.e: `` `a ${50} b` `` to `"a 50 b"`.
 - [ ] Simplify normal strings i.e: `"a" + "b"` to `"ab"`.
