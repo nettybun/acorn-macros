@@ -24,10 +24,10 @@ function ms(time: string) {
 }
 
 const msMacro = (): MacroDefinition => ({
-  importSource: 'ms.acorn',
+  importName: 'ms.acorn',
   importSpecifiers: {
     ms: {
-      rangeFn(_, ancestors) {
+      rangeFn({ ancestors }) {
         const nodeParent = ancestors[ancestors.length - 2];
         const { type, start, end } = nodeParent; // Worst case this is "Program"
         if (type !== 'TaggedTemplateExpression' && type !== 'CallExpression') {
@@ -35,8 +35,8 @@ const msMacro = (): MacroDefinition => ({
         }
         return { start, end };
       },
-      replaceFn({ identifier }, macroExpr) {
-        return (new Function(identifier, `return ${macroExpr}`))(ms);
+      replaceFn({ importSpecLocal }, macroExpr) {
+        return (new Function(importSpecLocal, `return ${macroExpr}`))(ms);
       },
     },
   },

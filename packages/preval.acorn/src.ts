@@ -4,10 +4,10 @@ import * as path from 'path';
 // TODO: Add more?
 
 const prevalMacro = (): MacroDefinition => ({
-  importSource: 'preval.acorn',
+  importName: 'preval.acorn',
   importSpecifiers: {
     preval: {
-      rangeFn(_, ancestors) {
+      rangeFn({ ancestors }) {
         const nodeParent = ancestors[ancestors.length - 2];
         const { type, start, end } = nodeParent; // Worst case this is "Program"
         if (type !== 'TaggedTemplateExpression' && type !== 'CallExpression') {
@@ -15,16 +15,16 @@ const prevalMacro = (): MacroDefinition => ({
         }
         return { start, end };
       },
-      async replaceFn({ identifier }, macroExpr) {
+      async replaceFn({ importSpecLocal: local }, macroExpr) {
         // There's never a naming conflicts with imports (fs, path, etc...) and
         // the (minified) identifier - I remove it completely
-        const char = macroExpr[identifier.length];
+        const char = macroExpr[local.length];
         if (char === '(') {
           // Extract slice between >identifier("< and >")<
-          macroExpr = macroExpr.slice(identifier.length + 1, macroExpr.length - 2);
+          macroExpr = macroExpr.slice(local.length + 1, macroExpr.length - 2);
         } else if (char === '`') {
           // Extract slice between >identifier`< and >`<
-          macroExpr = macroExpr.slice(identifier.length, macroExpr.length - 1);
+          macroExpr = macroExpr.slice(local.length, macroExpr.length - 1);
         } else {
           throw new Error(`Unexpected use of preval function:\n${macroExpr}`);
         }

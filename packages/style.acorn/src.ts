@@ -67,11 +67,11 @@ function injectGlobalImpl(statics: TemplateStringsArray, ...templateVariables: u
   return '';
 }
 
-const rangeFnForTagTemplates: RangeFn = ({ specifier }, ancestors) => {
+const rangeFnForTagTemplates: RangeFn = ({ importSpec, ancestors }) => {
   const nodeParent = ancestors[ancestors.length - 2]; // Identifier is - 1
   const { type, start, end } = nodeParent;
   if (type !== 'TaggedTemplateExpression') {
-    throw new Error(`Macro ${specifier} must be called as a tagged template expression not ${type}`);
+    throw new Error(`Macro ${importSpec} must be called as a tagged template expression not ${type}`);
   }
   return { start, end };
 };
@@ -83,19 +83,19 @@ const styleMacro = (options: Options = {}): MacroDefinition => {
   let timeStart = 0;
   let timeEnd = 0;
   const macroDef: MacroDefinition = {
-    importSource: 'style.acorn',
+    importName: 'style.acorn',
     importSpecifiers: {
       css: {
         rangeFn: rangeFnForTagTemplates,
-        replaceFn(macroIden, macroExpr) {
-          const run = new Function(macroIden.identifier, `return ${macroExpr}`);
+        replaceFn(meta, macroExpr) {
+          const run = new Function(meta.importSpecLocal, `return ${macroExpr}`);
           return run(cssImpl);
         },
       },
       injectGlobal: {
         rangeFn: rangeFnForTagTemplates,
-        replaceFn(macroIden, macroExpr) {
-          const run = new Function(macroIden.identifier, `return ${macroExpr}`);
+        replaceFn(meta, macroExpr) {
+          const run = new Function(meta.importSpecLocal, `return ${macroExpr}`);
           return run(injectGlobalImpl);
         },
       },
@@ -123,21 +123,21 @@ const styleMacro = (options: Options = {}): MacroDefinition => {
   };
   for (const name of Object.keys(importObjects)) {
     macroDef.importSpecifiers[name] = {
-      rangeFn({ specifier }, ASTAncestors) {
-        const [node, nodeParent, ...nodeRest] = [...ASTAncestors].reverse();
+      rangeFn({ importSpec, ancestors }) {
+        const [node, nodeParent, ...nodeRest] = [...ancestors].reverse();
         if (nodeParent.type !== 'MemberExpression') {
           // @ts-ignore
           // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-          throw new Error(`Import ${specifier} must be accessed as an object: ${node.name}.x.y.z`);
+          throw new Error(`Import ${importSpec} must be accessed as an object: ${node.name}.x.y.z`);
         }
         let top = nodeParent;
         for (const node of nodeRest) if (node.type === 'MemberExpression') top = node;
         return { start: top.start, end: top.end };
       },
-      replaceFn({ identifier }, macroExpr) {
+      replaceFn({ importSpecLocal }, macroExpr) {
         // If importObjects supported only one level deep (aka no objects) I
         // could get away with `return importObjects[macroExpr]`...
-        const run = new Function(identifier, `return ${macroExpr}`);
+        const run = new Function(importSpecLocal, `return ${macroExpr}`);
         return run(importObjects[name]);
       },
     };
