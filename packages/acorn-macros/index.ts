@@ -75,8 +75,10 @@ const Function = (Object.getPrototypeOf(function() {}) as {
 
 const importNameRegex = /\.acorn$|\/acorn-macro$/;
 
-/** Pretty-print interval range */
-const p = (x: ExprRange) => `[${x.start},${x.end})`;
+/** Pretty-print range */
+const pR = (x: ExprRange) => `[${x.start},${x.end})`;
+/** Pretty-print macro */
+const pM = (x: LocalMeta) => `${x.importName}#${x.importSpec}`;
 // @ts-ignore. Creates a new nested dictionary entry `{}` as needed.
 const objGet = <T>(o: Partial<T>, k: string) => (o[k] || (o[k] = {})) as T[keyof T];
 
@@ -167,7 +169,7 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
       if (!macroNameAndSpec) return;
       console.log('Identifier matches', macroNameAndSpec);
       ancestors.forEach((n, i) => {
-        console.log(`  - ${'  '.repeat(i)}${n.type} ${p(n)}`);
+        console.log(`  - ${'  '.repeat(i)}${n.type} ${pR(n)}`);
       });
       // Maintain an object reference so macro authors can pass state around
       const state = {};
@@ -179,7 +181,15 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
         state,
       };
       // Returns exactly a {start,end} object
-      const range = rangeFnOpenStackCheck(localMeta);
+      const range = rangeFnTryCall(localMeta);
+
+      // There's at least one
+      const lastRangeImport = importRanges[importRanges.length - 1];
+      if (range.start < lastRangeImport.end) {
+        throw new Error(
+          `Macro ${pM(localMeta)} range ${pR(range)} overlaps with an import statement`);
+      }
+      // Patch to be put onto the open stack (O.S)
       let resolve: (result: string) => void;
       const patch: Patch = {
         range,
@@ -190,11 +200,39 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
       };
       // Push to open stack. Follow the O.S -> C.L algorithm for closing patches
       // who end before this patch. Throw as needed for overlapping areas.
-      // TODO: Move to C.L, call replaceFnClosedListCheck(), etc etc.
+      for (let i = openStack.length - 1; i >= 0; i--) {
+        const cursor = openStack[i].range;
+        if (range.start > cursor.start && range.end <= cursor.end) {
+          break; // Nest it on the stack. We're done.
+        }
+        if (range.start < cursor.end) {
+          throw new Error(`Range overlap trying to stack ${pR(range)} onto ${pR(cursor)}`);
+        }
+        const poppedPatch = openStack.pop() as Patch; // This has to be openStack[i]
+        console.assert(poppedPatch === openStack[i]);
+
+        // Execute the macro asynchronously (floating promise)
+        void replaceFnTryCall(patch);
+
+        if (openStack.length) {
+          // Reparent and loop the for-loop again
+          openStack[openStack.length - 1].nestedPatches.push(poppedPatch);
+          continue;
+        }
+        // Open stack is empty. The stack was converted into a nested tree of
+        // running patch promises. Move it to the closed list
+        closedListTryPush(patch);
+      }
       openStack.push(patch);
     },
   });
-  // TODO: Clear any remaining open stack items
+  // Reached end of AST. Clear remaining open stack layers
+  let patch: Patch | undefined;
+  while ((patch = openStack.pop())) {
+    void replaceFnTryCall(patch);
+    if (openStack.length) openStack[openStack.length - 1].nestedPatches.push(patch);
+    else closedListTryPush(patch);
+  }
 
   // Apply final replacements. Note AST is a Node which fits the ExprRange type
   code = await applyPatches(ast, closedList);
@@ -209,7 +247,19 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
 
   // Functions:
 
-  function rangeFnOpenStackCheck(localMeta: LocalMeta): ExprRange {
+  function closedListTryPush(patch: Patch): void {
+    if (closedList.length) {
+      const lastRangeCL = closedList[closedList.length - 1].range;
+      const { range, localMeta } = patch;
+      if (range.start < lastRangeCL.end) {
+        throw new Error(
+          `Macro ${pM(localMeta)} at ${pR(range)} overlaps a closed patch at ${pR(lastRangeCL)}`);
+      }
+    }
+    closedList.push(patch);
+  }
+
+  function rangeFnTryCall(localMeta: LocalMeta): ExprRange {
     const { importName, importSpec } = localMeta;
     const { rangeFn } = mapNameToSpecToFn[importName][importSpec];
     const errCommon = `rangeFn() of macro ${importName}#${importSpec}`;
@@ -227,20 +277,14 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
       throw new Error(`${errPrefix}, must be a { start: int, end: int } object`);
     }
     const range = result as { start: number, end: number };
-    const rangeString = `{ start: ${range.start}, end: ${range.end} }`;
     if (range.end < range.start) {
-      throw new Error(`${errPrefix}, range end came before its start: ${rangeString}`);
+      throw new Error(`${errPrefix}, range end came before its start: ${pR(range)}`);
     }
-    // There's at least one
-    const lastImportRange = importRanges[importRanges.length - 1];
-    if (range.start < lastImportRange.end) {
-      throw new Error(`${errPrefix}, range overlaps with an import statement: ${rangeString}`);
-    }
-    // TODO: Open stack checks.
     return { start: range.start, end: range.end };
   }
 
-  async function replaceFnClosedListCheck(patch: Patch) {
+  // Doesn't return anything since the patch value is written via valueResolver
+  async function replaceFnTryCall(patch: Patch): Promise<void> {
     const { range, nestedPatches, localMeta } = patch;
     const { importName, importSpec } = localMeta;
     const { replaceFn } = mapNameToSpecToFn[importName][importSpec];
@@ -258,7 +302,6 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
       throw new Error(`Bad return value from ${errCommon}, must be string not "${typeof result}"`);
     }
     patch.valueResolver(result);
-    // TODO: Closed list checks.
   }
 
   async function applyPatches(codeRange: ExprRange, patches: Patch[]) {
