@@ -1,3 +1,4 @@
 node_modules
 test/*/out/*.js
-packages/*.acorn/*.js
+packages/**/*.js
+!packages/acorn-macros-sync/index.js

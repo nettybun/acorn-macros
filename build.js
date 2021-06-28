@@ -12,7 +12,6 @@ function build(filePath) {
   promises.push(buildTask);
 }
 for (const dirName of await fs.readdir('./packages')) {
-  if (!dirName.endsWith('.acorn')) continue;
   for (const fileName of await fs.readdir(`./packages/${dirName}`)) {
     if (fileName.endsWith('.d.ts') || !fileName.endsWith('.ts')) continue;
     build(`./packages/${dirName}/${fileName}`);

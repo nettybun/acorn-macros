@@ -82,7 +82,7 @@ const buildResult = await esbuild.build({
 });
 const [buffer] = buildResult.outputFiles;
 const codeOriginal = (new TextDecoder()).decode(buffer.contents);
-const codeReplaced = replaceMacros(codeOriginal, [
+const codeReplaced = await replaceMacros(codeOriginal, [
   styleMacro({
     outFile: './dist/out.css'
   }),
