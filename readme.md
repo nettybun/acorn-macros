@@ -1,8 +1,15 @@
 # Framework for evaluating and replacing macros in JS
 
-_Work in progress ⚠_
+_IT'S WORKING ❤❤❤_
 
-_**These docs are out of date. The API has changed. Sorry!**_
+> Docs are out of date. The API has changed. Needs cleanup before publishing etc
+> but it ✨ _works_ ✨ as of 2ec0e77. Try it!
+> ```
+> npm install
+> npm run build
+> npm run test -- style.acorn
+> npm run test -- preval.acorn
+> ```
 
 Defines a framework for defining macros in JS. These imports are evaluated and
 replaced at build-time and have zero runtime overhead. This replaces
