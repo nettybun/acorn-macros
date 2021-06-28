@@ -80,7 +80,7 @@ const pR = (x: ExprRange) => `[${x.start},${x.end})`;
 /** Pretty-print macro */
 const pM = (x: LocalMeta) => `${x.importName}#${x.importSpec}`;
 // @ts-ignore. Creates a new nested dictionary entry `{}` as needed.
-const objGet = <T>(o: Partial<T>, k: string) => (o[k] || (o[k] = {})) as T[keyof T];
+const objGet = <T>(o: Partial<T>, k: string, or: T[keyof T]) => (o[k] || (o[k] = or)) as T[keyof T];
 
 async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node): Promise<string> {
   const mapNameToIndex: { [name: string]: number } = {};
@@ -153,8 +153,8 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
         if (!(spec in mapNameToSpecToFn[name])) {
           throw new Error(`Import specifier ${spec} is not part of ${name}`);
         }
-        const mapSpecToLocals = objGet(mapNameToSpecToLocals, name);
-        const locals = objGet(mapSpecToLocals, spec);
+        const mapSpecToLocals = objGet(mapNameToSpecToLocals, name, {});
+        const locals = objGet(mapSpecToLocals, spec, []);
         if (locals.includes(local)) return;
         locals.push(local);
         mapLocalToNameAndSpec[local] = { name, spec };
@@ -201,27 +201,29 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
       // Push to open stack. Follow the O.S -> C.L algorithm for closing patches
       // who end before this patch. Throw as needed for overlapping areas.
       for (let i = openStack.length - 1; i >= 0; i--) {
-        const cursor = openStack[i].range;
-        if (range.start > cursor.start && range.end <= cursor.end) {
+        const patch_i = openStack[i];
+        const { range: range_i } = patch_i;
+        if (range.start > range_i.start && range.end <= range_i.end) {
           break; // Nest it on the stack. We're done.
         }
-        if (range.start < cursor.end) {
-          throw new Error(`Range overlap trying to stack ${pR(range)} onto ${pR(cursor)}`);
+        if (range.start < range_i.end) {
+          throw new Error(`Range overlap trying to stack ${pR(range)} onto ${pR(range_i)}`);
         }
-        const poppedPatch = openStack.pop() as Patch; // This has to be openStack[i]
-        console.assert(poppedPatch === openStack[i]);
+        // TODO: This has to be patch_i. If all tests pass remove this assert
+        const popped = openStack.pop() as Patch;
+        console.assert(popped === patch_i);
 
         // Execute the macro asynchronously (floating promise)
-        void replaceFnTryCall(patch);
+        void replaceFnTryCall(patch_i);
 
         if (openStack.length) {
           // Reparent and loop the for-loop again
-          openStack[openStack.length - 1].nestedPatches.push(poppedPatch);
+          openStack[openStack.length - 1].nestedPatches.push(patch_i);
           continue;
         }
         // Open stack is empty. The stack was converted into a nested tree of
         // running patch promises. Move it to the closed list
-        closedListTryPush(patch);
+        closedListTryPush(patch_i);
       }
       openStack.push(patch);
     },
@@ -235,7 +237,7 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
   }
 
   // Apply final replacements. Note AST is a Node which fits the ExprRange type
-  code = await applyPatches(ast, closedList);
+  code = await applyPatches({ start: ast.start, end: ast.end }, closedList);
 
   // Remove the import statements. Backwards to maintain indices
   let importRange: ExprRange | undefined;
@@ -273,7 +275,7 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
     }
     const errPrefix = `Bad return value from ${errCommon}`;
     type R = { start: unknown, end: unknown };
-    if (!result || Number.isInteger((result as R).start) || Number.isInteger((result as R).end)) {
+    if (!result || !Number.isInteger((result as R).start) || !Number.isInteger((result as R).end)) {
       throw new Error(`${errPrefix}, must be a { start: int, end: int } object`);
     }
     const range = result as { start: number, end: number };
@@ -288,7 +290,10 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
     const { range, nestedPatches, localMeta } = patch;
     const { importName, importSpec } = localMeta;
     const { replaceFn } = mapNameToSpecToFn[importName][importSpec];
-    const macroExpr = await applyPatches(range, nestedPatches);
+    // Skipping an "await" here in case that helps the engine avoid microtasks
+    const macroExpr = nestedPatches.length
+      ? await applyPatches(range, nestedPatches)
+      : code.slice(range.start, range.end);
     const errCommon = `replaceFn() of macro ${importName}#${importSpec}`;
     let result: unknown;
     try {
@@ -310,7 +315,7 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
       ? code.slice(codeRange.start, codeRange.end)
       : code;
     // Work backwards to not mess up indices
-    for (let i = 0; i < patchStrings.length; i++) {
+    for (let i = patchStrings.length - 1; i >= 0; i--) {
       expr
         = expr.slice(0, patches[i].range.start - codeRange.start)
         + patchStrings[i]
