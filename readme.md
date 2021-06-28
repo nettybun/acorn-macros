@@ -3,7 +3,9 @@
 _IT'S WORKING ❤❤❤_
 
 > Docs are out of date. The API has changed. Needs cleanup before publishing etc
-> but it ✨ _works_ ✨ as of 2ec0e77. Try it!
+> but it ✨ _works_ ✨ as of c6d7650. Test output is saved in this repo or try it
+> yourself via
+>
 > ```
 > npm install
 > npm run build
