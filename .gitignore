@@ -1,3 +1,4 @@
 node_modules
 packages/**/*.js
 !packages/acorn-macros-sync/index.js
+*.png
