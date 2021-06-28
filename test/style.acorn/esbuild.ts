@@ -55,7 +55,7 @@ declare module 'style.acorn' {
   const sizes:   typeof importObjects.sizes;
 }
 
-const codeReplaced = replaceMacros(codeOriginal, [
+const codeReplaced = await replaceMacros(codeOriginal, [
   styleMacro({
     // Here '...' is for returning JS code and '"..."' is for returning strings
     importObjects,

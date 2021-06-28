@@ -12,7 +12,7 @@ const buildResult = await esbuild.build({
 });
 const [bundle] = buildResult.outputFiles;
 const codeOriginal = (new TextDecoder()).decode(bundle.contents);
-const codeReplaced = replaceMacros(codeOriginal, [ msMacro() ]);
+const codeReplaced = await replaceMacros(codeOriginal, [ msMacro() ]);
 fs.writeFileSync('./out/code-original.js', codeOriginal);
 fs.writeFileSync('./out/code-replaced-macros.js', codeReplaced);
 console.log('Done ✨');

@@ -21,7 +21,7 @@ const buildResult = await esbuild.build({
 });
 const [bundle] = buildResult.outputFiles;
 const codeOriginal = (new TextDecoder()).decode(bundle.contents);
-const codeReplaced = replaceMacros(codeOriginal, [
+const codeReplaced = await replaceMacros(codeOriginal, [
   msMacro(),
   styleMacro(),
 ]);
