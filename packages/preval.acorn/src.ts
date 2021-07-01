@@ -2,7 +2,36 @@ import { AsyncFunction } from 'acorn-macros';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-import type { MacroDefinition } from 'acorn-macros';
+import type { MacroDefinition, LocalMeta } from 'acorn-macros';
+
+async function replaceFn({ importSpecLocal }: LocalMeta, macroExpr: string) {
+  const local = importSpecLocal;
+  // Prevent naming conflict with this file's imports (fs, path, etc...) and the
+  // local identifier (which could be minified) by cutting it out:
+  macroExpr = macroExpr.slice(local.length);
+  // Process the template string: `A {1 + 1} B` => "A 2 B":
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  macroExpr = (new Function(`return ${macroExpr};`))() as string;
+  // That'll handle all the nested ${} blocks? I think?
+  const run = new AsyncFunction('fs', 'path', macroExpr);
+  const result = (await run(fs, path)) as unknown;
+  // I don't want to write a serializer that infinitely expand objects.
+  // Dealing with circular objects and huge modules "fs"...no thanks
+
+  if (result && typeof result === 'object') {
+    // Can't JSON.stringify because that silently drops things including
+    // functions. Also it returns strings, not code...
+    const pairs = Object.entries(result).map(([key, value]) => {
+      if (typeof value === 'function' && (value as {name: string}).name === key)
+        return String(value);
+      else
+        return `"${key}":${tryString(value)}`;
+    });
+    return `{${pairs.join(',')}}`;
+  }
+  // Hope your object serializes 🤞. Add serializations as needed Set,Map,etc...
+  return String(result);
+}
 
 const prevalMacro = (): MacroDefinition => ({
   importName: 'preval.acorn',
@@ -11,45 +40,12 @@ const prevalMacro = (): MacroDefinition => ({
       rangeFn({ ancestors }) {
         const nodeParent = ancestors[ancestors.length - 2];
         const { type, start, end } = nodeParent; // Worst case this is "Program"
-        if (type !== 'TaggedTemplateExpression' && type !== 'CallExpression') {
-          throw new Error(`Macro preval must be called as either a function or a tagged template expression not ${type}`);
+        if (type !== 'TaggedTemplateExpression') {
+          throw new Error(`Macro preval must be called a tagged template expression not ${type}`);
         }
         return { start, end };
       },
-      async replaceFn({ importSpecLocal: local }, macroExpr) {
-        // There's never a naming conflict with imports (fs, path, etc...) and
-        // the (minified) identifier - I remove it completely
-        const char = macroExpr[local.length];
-        if (char === '(') {
-          // Extract slice between >identifier("< and >")<
-          macroExpr = macroExpr.slice(local.length + 2, macroExpr.length - 2);
-        } else if (char === '`') {
-          // Extract slice between >identifier`< and >`<
-          macroExpr = macroExpr.slice(local.length + 1, macroExpr.length - 1);
-        } else {
-          throw new Error(`Unexpected use of preval function:\n${macroExpr}`);
-        }
-        const run = new AsyncFunction('fs', 'path', macroExpr);
-        const result = (await run(fs, path)) as unknown;
-        // I don't want to write a serializer that infinitely expand objects.
-        // That's hard. There's circulary things and imagine trying to serialize
-        // something huge like "fs" as a module. No thanks.
-
-        if (result && typeof result === 'object') {
-          // Can't JSON.stringify because that silently drops things including
-          // functions. Also it returns strings, not code...
-          const pairs = Object.entries(result).map(([key, value]) => {
-            if (typeof value === 'function' && (value as {name: string}).name === key)
-              return String(value);
-            else
-              return `"${key}":${tryString(value)}`;
-          });
-          return `{${pairs.join(',')}}`;
-        }
-        // TODO: Add more serializations here like Set,Map,etc...
-
-        return String(result); // Hope your object serializes :^)
-      },
+      replaceFn,
     },
   },
 });

@@ -8,9 +8,10 @@ const content = preval`
   };
 ` as { val: string, lineCount: () => number };
 
-// Network requests at build time!
+// Network requests at build time and handling ${} via pre-call processing step
 preval`
   console.log('✨ Fetching PNG ✨');
+  console.log('✨ Template string processing: ${process.platform}');
   const fetch = (await import('node-fetch')).default;
   fetch('https://placekitten.com/200/200')
     .then(res => res.buffer())
