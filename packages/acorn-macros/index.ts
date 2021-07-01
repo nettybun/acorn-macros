@@ -326,4 +326,4 @@ async function replaceMacros(code: string, macros: MacroDefinition[], ast?: Node
 }
 
 export { replaceMacros, Function, AsyncFunction };
-export type { MacroDefinition };
+export type { ExprRange, Patch, LocalMeta, MacroDefinition };
