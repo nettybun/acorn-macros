@@ -9,6 +9,7 @@ var content = preval`
 `;
 preval`
   console.log('✨ Fetching PNG ✨');
+  console.log('✨ Template string processing: ${process.platform}');
   const fetch = (await import('node-fetch')).default;
   fetch('https://placekitten.com/200/200')
     .then(res => res.buffer())
